@@ -1,5 +1,5 @@
 // État de l'appli, sauvegardé dans le navigateur du téléphone (et en ligne si un compte est connecté).
-import { defaultStart } from './program.js';
+import { DEFAULT_GYMS, defaultStart } from './program.js';
 
 const KEY = 'personnal-trainer:v1';
 const listeners = new Set();
@@ -16,7 +16,8 @@ export function defaults() {
       notifications: false,
       reminderMinutes: 30,
       access: { escalade: false, muscu: false, course: true },
-      goal: null,
+      goals: {},
+      gyms: structuredClone(DEFAULT_GYMS),
     },
     adapt: { escalade: 1, muscu: 1, cardio: 1, gradeIdx: 3 },
     logs: [],
@@ -39,6 +40,11 @@ export function defaults() {
 // Complète un état ancien, importé ou venant d'un autre appareil avec les valeurs par défaut.
 export function normalize(s) {
   const base = defaults();
+  // Ancien objectif unique (voie ou bloc) : devient l'objectif de son type.
+  if (s.settings?.goal !== undefined) {
+    const { goal, ...rest } = s.settings;
+    s = { ...s, settings: { ...rest, goals: { ...(goal ? { [goal.kind]: goal } : {}), ...rest.goals } } };
+  }
   return {
     ...base,
     ...s,

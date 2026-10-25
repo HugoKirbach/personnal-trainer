@@ -19,8 +19,9 @@ export function suggestGrade(state, kind, today = new Date()) {
   return GRADES[Math.min(GRADES.length - 1, Math.max(0, base) + 2)];
 }
 
-export function addProject(state, { name, kind, grade, place = '', notes = '' }, date) {
-  const p = { id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: name.trim() || `${kind === 'voie' ? 'Voie' : 'Bloc'} ${grade}`, kind, grade, place: place.trim(), notes: notes.trim(), created: date, status: 'actif', log: {} };
+// Un bloc peut être repéré par le niveau de sa salle (gym, level) ; grade garde l'équivalence en cotation.
+export function addProject(state, { name, kind, grade, gym, level, place = '', notes = '' }, date) {
+  const p = { id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: name.trim() || `${kind === 'voie' ? 'Voie' : 'Bloc'} ${level ?? grade}`, kind, grade, ...(gym ? { gym, level } : {}), place: place.trim(), notes: notes.trim(), created: date, status: 'actif', log: {} };
   state.projects = [...(state.projects || []), p];
   return p;
 }
@@ -50,7 +51,7 @@ export function sendProject(state, id, date) {
     return { ...x, status: 'enchaine', sent: date };
   });
   if (!p) return null;
-  state.climbs = [...(state.climbs || []).filter((c) => c.project !== id), { id: `c${id}`, date, kind: p.kind, grade: p.grade, style: 'enchaine', project: id }];
+  state.climbs = [...(state.climbs || []).filter((c) => c.project !== id), { id: `c${id}`, date, kind: p.kind, grade: p.grade, ...(p.gym ? { gym: p.gym, level: p.level } : {}), style: 'enchaine', project: id }];
   return p;
 }
 

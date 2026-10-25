@@ -135,16 +135,19 @@ try {
 
   // Carnet d'escalade : un bloc enchaîné, repris dans la cotation max.
   await page.click(`${PLAN} .climbs summary`);
-  await page.selectOption(`${PLAN} [data-form="climb"] select[name=grade]`, '6b');
+  check(!(await page.isVisible(`${PLAN} [data-form="climb"] select[name=grade]`)), 'bloc : niveaux de la salle plutôt que cotation');
+  await page.selectOption(`${PLAN} [data-form="climb"] select[name=level]`, 'g1|Rose');
   await page.click(`${PLAN} [data-form="climb"] button`);
-  check((await page.textContent(`${PLAN} .climb-list`)).includes('6b'), 'bloc noté');
+  const climbLine = await page.textContent(`${PLAN} .climb-list`);
+  check(climbLine.includes('Rose') && climbLine.includes('≈ 6b'), 'bloc noté dans le niveau de la salle');
+  check((await page.textContent(`${PLAN} [data-form="log"] select[name=maxGrade] option:checked`)).includes('Rose'), 'cotation max avec les niveaux des salles');
   check((await page.inputValue('[data-form="log"] select[name=maxGrade]')) === '6b', 'cotation max préremplie');
   await shot('1a-carnet-escalade');
 
   // Projets : un bloc travaillé avec photo, essais, point haut, enchaînement versé au carnet.
   await page.click(`${PLAN} .projects summary`);
   await page.click(`${PLAN} [data-project-new]`);
-  check((await page.inputValue('#sheet select[name=grade]')) === '6c', 'cotation de projet proposée au-dessus du max');
+  check((await page.inputValue('#sheet select[name=level]')) === 'g1|Rouge', 'niveau de projet proposé au-dessus du max');
   await page.fill('#sheet input[name=name]', 'Le dévers jaune');
   await page.setInputFiles('#sheet input[name=photo]', fileURLToPath(new URL('../icons/icon-192.png', import.meta.url)));
   await page.click('#sheet button.primary');
@@ -286,14 +289,26 @@ try {
   await shot('5-reglages');
 
   // Objectif de saison : les cycles deviennent des blocs jusqu'à la date.
-  await page.fill('input[name=goalDate]', '2027-06-12');
+  await page.fill('input[name=goal-voie-date]', '2027-06-12');
+  await page.selectOption('select[name=goal-bloc]', 'g1|Rouge');
+  await page.fill('input[name=goal-bloc-date]', '2027-03-06');
   await page.click('[data-form="settings"] button.primary');
-  check((await page.textContent('#toast')).includes('affûtage'), 'plan de saison annoncé');
+  const goalToast = await page.textContent('#toast');
+  check(goalToast.includes('Rouge en bloc : base') && goalToast.includes('7a en voie :'), 'deux plans de saison annoncés');
   check((await page.textContent('#week-badge')).includes('Base'), 'bloc de la semaine dans l\'en-tête');
   await page.click('nav [data-go="stats"]');
   const season = await page.textContent('.season-card');
-  check(season.includes('7a en voie') && season.includes('Force-endurance'), 'carte objectif de saison');
-  check((await page.$$('.season-card .blk')).length === 5, 'cinq blocs sur la frise');
+  check(season.includes('7a en voie') && season.includes('Rouge en bloc') && season.includes('Salle principale'), 'carte des objectifs de saison');
+  check((await page.$$('.season-card .blk')).length >= 6, 'blocs des deux plans sur la frise');
+  await shot('4b-objectifs');
+
+  // Salles : une équivalence ajustée recale les blocs déjà notés.
+  await page.click('nav [data-go="settings"]');
+  await page.click('[data-form="gyms"] fieldset >> nth=0 >> summary');
+  await page.selectOption('select[name="eq-0-3"]', '6b+');
+  await page.click('[data-form="gyms"] button.primary');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('personnal-trainer:v1')));
+  check(saved.climbs.some((c) => c.level === 'Rose' && c.grade === '6b+'), 'équivalence de la salle appliquée au carnet');
 
   // Persistance après rechargement.
   await page.reload();
@@ -339,7 +354,7 @@ try {
   // Un bloc noté sur le téléphone B arrive sur le téléphone A.
   await phoneB.click('nav [data-go="today"]');
   await phoneB.click('.climbs summary');
-  await phoneB.selectOption('[data-form="climb"] select[name=grade]', '7a');
+  await phoneB.selectOption('[data-form="climb"] select[name=level]', '|7a');
   await phoneB.click('[data-form="climb"] button');
   await phoneB.click('nav [data-go="settings"]');
   await phoneB.click('[data-action="cloud-sync"]');

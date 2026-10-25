@@ -171,34 +171,98 @@ export function allocateBlocks(k) {
   return [...Array(base).fill('base'), ...Array(k - base - endurance - 1).fill('force'), ...Array(endurance).fill('endurance'), 'performance'];
 }
 
-// settings.goal = { grade, kind (voie ou bloc), date, from (lundi où le plan a été fixé), fromGrade }
-export function seasonPlan(state) {
-  const g = state.settings.goal;
-  if (!g?.date || !g.from) return null;
-  const start = state.settings.startDate;
-  const goalWeek = weekInfo(parseYmd(g.date), start).week;
-  const fromWeek = Math.min(goalWeek, weekInfo(parseYmd(g.from), start).week);
-  const taperFrom = Math.max(fromWeek, goalWeek - 1);
-  const firstCycle = Math.ceil(fromWeek / 4);
-  const k = taperFrom > fromWeek ? Math.ceil((taperFrom - 1) / 4) - firstCycle + 1 : 0;
-  // Un bloc regroupe les cycles consécutifs de la même phase.
-  const blocks = [];
-  allocateBlocks(k).forEach((phase, j) => {
-    const c = firstCycle + j;
-    const from = Math.max(fromWeek, 4 * (c - 1) + 1);
-    const to = Math.min(4 * c, taperFrom - 1);
-    if (blocks.at(-1)?.phase === phase) blocks.at(-1).to = to;
-    else blocks.push({ phase, from, to });
-  });
-  blocks.push({ phase: 'affutage', from: taperFrom, to: goalWeek });
-  return { ...g, fromWeek, goalWeek, blocks };
+// ---------- Salles d'escalade : niveaux maison et équivalence approximative ----------
+// Échelle complète pour les équivalences (GRADES en est une partie, mêmes libellés).
+export const SCALE = ['4', '5a', '5b', '5c', '6a', '6a+', '6b', '6b+', '6c', '6c+', '7a', '7a+', '7b', '7b+', '7c'];
+// Équivalences par défaut, à ajuster dans Réglages selon l'ouverture de la salle.
+export const DEFAULT_GYMS = [
+  { id: 'g1', name: 'Salle principale', levels: [['Vert', '5a'], ['Bleu', '5c'], ['Violet', '6a'], ['Rose', '6b'], ['Rouge', '6c'], ['Noir', '7a']].map(([name, grade]) => ({ name, grade })) },
+  { id: 'g2', name: 'Seconde salle', levels: ['4', '5a', '5b', '5c', '6a', '6b', '6c', '7a', '7b'].map((grade, i) => ({ name: String(i + 1), grade })) },
+];
+const scaleIdx = (g) => SCALE.indexOf(g);
+
+export function gymOf(settings, id) {
+  return (settings.gyms || []).find((g) => g.id === id) || null;
 }
 
-export function blockAt(plan, week) {
-  if (!plan || week < plan.fromWeek || week > plan.goalWeek) return null;
+export function levelGrade(settings, gymId, level) {
+  return gymOf(settings, gymId)?.levels.find((l) => l.name === level)?.grade ?? null;
+}
+
+// Cotation retenue pour les statistiques : au-dessus de 7b, on plafonne ; en dessous de 5c, elle reste hors graphiques.
+export function statGrade(g) {
+  return scaleIdx(g) > scaleIdx(GRADES.at(-1)) ? GRADES.at(-1) : g;
+}
+
+// Niveau d'une salle le plus proche d'une cotation (à égalité, le plus facile).
+export function nearestLevel(gym, grade) {
+  const i = scaleIdx(grade);
+  if (!gym?.levels.length || i < 0) return null;
+  return gym.levels.reduce((best, l) => (Math.abs(scaleIdx(l.grade) - i) < Math.abs(scaleIdx(best.grade) - i) ? l : best));
+}
+
+// « 6b · Rose / 6 » : la cotation suivie des niveaux équivalents dans tes salles.
+export function withLevels(settings, grade) {
+  const names = (settings.gyms || []).map((g) => nearestLevel(g, grade)?.name).filter(Boolean);
+  return names.length ? `${grade} · ${names.join(' / ')}` : grade;
+}
+
+// Repère le bloc ou la voie : niveau de la salle s'il y en a un, sinon la cotation.
+export const gradeTag = (x) => x.level ?? x.grade;
+
+// ---------- Objectifs de saison ----------
+// settings.goals = { voie: goal, bloc: goal }, goal = { grade, kind, date, from (lundi où il a été fixé), fromGrade, gym?, level? }
+// Un objectif bloc peut viser un niveau de salle : sa cotation suit l'équivalence réglée pour ce niveau.
+export function goalGrade(goal, settings) {
+  return (goal.gym && levelGrade(settings, goal.gym, goal.level)) || goal.grade;
+}
+
+export function goalLabel(goal) {
+  return `${goal.level ?? goal.grade} en ${goal.kind}`;
+}
+
+export function seasonGoals(state) {
+  return Object.values(state.settings.goals || {}).filter((g) => g?.date && g.from).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Un plan par objectif, dans l'ordre des dates : le suivant démarre après l'objectif précédent.
+export function seasonPlans(state) {
+  const start = state.settings.startDate;
+  const plans = [];
+  for (const g of seasonGoals(state)) {
+    const goalWeek = weekInfo(parseYmd(g.date), start).week;
+    const prev = plans.at(-1);
+    if (prev && goalWeek <= prev.goalWeek) { prev.goals.push(g); continue; } // même semaine : un seul pic
+    const fromWeek = Math.min(goalWeek, Math.max(weekInfo(parseYmd(g.from), start).week, prev ? prev.goalWeek + 1 : -Infinity));
+    const taperFrom = Math.max(fromWeek, goalWeek - 1);
+    const firstCycle = Math.ceil(fromWeek / 4);
+    const k = taperFrom > fromWeek ? Math.ceil((taperFrom - 1) / 4) - firstCycle + 1 : 0;
+    // Un bloc regroupe les cycles consécutifs de la même phase.
+    const blocks = [];
+    allocateBlocks(k).forEach((phase, j) => {
+      const c = firstCycle + j;
+      const from = Math.max(fromWeek, 4 * (c - 1) + 1);
+      const to = Math.min(4 * c, taperFrom - 1);
+      if (blocks.at(-1)?.phase === phase) blocks.at(-1).to = to;
+      else blocks.push({ phase, from, to });
+    });
+    // Un début de cycle d'une semaine rejoint le bloc suivant plutôt que de faire un bloc à lui seul.
+    if (blocks.length > 1 && blocks[0].to === blocks[0].from) blocks.splice(0, 2, { ...blocks[1], from: blocks[0].from });
+    // Le dernier bloc avant l'affûtage dure au moins deux semaines : il prend une semaine au précédent.
+    const [before, lastB] = blocks.slice(-2);
+    if (lastB && before && lastB.to === lastB.from && before.to - before.from >= 2) { before.to -= 1; lastB.from -= 1; }
+    blocks.push({ phase: 'affutage', from: taperFrom, to: goalWeek });
+    plans.push({ ...g, goals: [g], fromWeek, goalWeek, blocks });
+  }
+  return plans;
+}
+
+export function blockAt(plans, week) {
+  const plan = [].concat(plans || []).find((p) => p && week >= p.fromWeek && week <= p.goalWeek);
+  if (!plan) return null;
   const index = plan.blocks.findIndex((b) => week >= b.from && week <= b.to);
   const b = plan.blocks[index];
-  return { ...b, ...BLOCKS[b.phase], index, weekIn: week - b.from + 1, weeks: b.to - b.from + 1, goalWeek: week === plan.goalWeek };
+  return { ...b, ...BLOCKS[b.phase], index, weekIn: week - b.from + 1, weeks: b.to - b.from + 1, goalWeek: week === plan.goalWeek, goals: plan.goals };
 }
 
 // Meilleure cotation enchaînée ces 8 dernières semaines (carnet d'escalade, sinon ressenti des séances).
@@ -212,28 +276,40 @@ export function recentMax(state, kind, today = new Date()) {
   return idx.length ? GRADES[Math.max(...idx)] : null;
 }
 
-// Où en est la saison : bloc en cours, cotation attendue (progression linéaire vers l'objectif) et références.
+function firstMax(state, kind, from) {
+  const d = parseYmd(from);
+  return recentMax(state, kind, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 13));
+}
+
+// Où en est la saison : bloc en cours, et pour chaque objectif la cotation attendue (progression linéaire) face au max récent.
 export function seasonStatus(state, today = new Date()) {
-  const plan = seasonPlan(state);
-  if (!plan) return null;
-  const week = weekInfo(today, state.settings.startDate).week;
-  const block = blockAt(plan, week);
-  const daysLeft = Math.round((parseYmd(plan.date) - parseYmd(ymd(today))) / 86400000);
-  const from = GRADES.indexOf(plan.fromGrade);
-  const to = GRADES.indexOf(plan.grade);
-  const progress = clamp((week - plan.fromWeek) / Math.max(1, plan.goalWeek - plan.fromWeek), 0, 1);
-  const expected = GRADES[Math.round(from + (to - from) * progress)];
-  const current = recentMax(state, plan.kind, today);
-  const ci = GRADES.indexOf(current);
-  const ei = GRADES.indexOf(expected);
-  const pace = !current ? 'unknown' : ci >= to ? 'reached' : ci > ei ? 'ahead' : ci === ei ? 'on-track' : 'behind';
+  const plans = seasonPlans(state);
+  if (!plans.length) return null;
+  const start = state.settings.startDate;
+  const week = weekInfo(today, start).week;
+  const goals = seasonGoals(state).map((g) => {
+    const goalWeek = weekInfo(parseYmd(g.date), start).week;
+    const fromWeek = weekInfo(parseYmd(g.from), start).week;
+    const daysLeft = Math.round((parseYmd(g.date) - parseYmd(ymd(today))) / 86400000);
+    const current = recentMax(state, g.kind, today);
+    // Sans cotation connue quand l'objectif a été fixé, le point de départ est ton max des deux premières semaines.
+    const from = scaleIdx(g.fromGrade || firstMax(state, g.kind, g.from) || current);
+    const to = scaleIdx(goalGrade(g, state.settings));
+    const progress = clamp((week - fromWeek) / Math.max(1, goalWeek - fromWeek), 0, 1);
+    const expected = from < 0 ? null : SCALE[Math.round(from + (to - from) * progress)];
+    const ci = scaleIdx(current);
+    const ei = scaleIdx(expected);
+    const pace = !current ? 'unknown' : ci >= to ? 'reached' : ci > ei ? 'ahead' : ci === ei ? 'on-track' : 'behind';
+    return { goal: g, goalWeek, daysLeft, expected, current, pace, gap: ei - ci, over: week > goalWeek };
+  });
   const benches = state.benchmarks || [];
-  const ref = [...benches].reverse().find((b) => b.date <= plan.from) || benches[0];
+  const first = seasonGoals(state).map((g) => g.from).sort()[0];
+  const ref = [...benches].reverse().find((b) => b.date <= first) || benches[0];
   const last = benches.at(-1);
   const gains = ref && last && ref !== last
     ? ['pullups', 'hang', 'gripper'].filter((k) => ref[k] && last[k]).map((k) => ({ key: k, delta: last[k] - ref[k] }))
     : [];
-  return { plan, week, block, daysLeft, expected, current, pace, gap: ei - ci, gains, over: week > plan.goalWeek };
+  return { plans, week, block: blockAt(plans, week), goals, gains, over: goals.every((x) => x.over) };
 }
 
 export function weekKey(date) {
@@ -659,15 +735,15 @@ export function buildSession(key, date, state, express = false, minutes = null) 
   const variant = resolveKey(key, state, express);
   const t = TEMPLATES[variant];
   const type = t.type;
-  const block = blockAt(seasonPlan(state), info.week);
+  const block = blockAt(seasonPlans(state), info.week);
   const f = info.mult * (block?.mult ?? 1) * (a[type] ?? 1);
   const bench = latestBench(state);
   const p = prescriptions(bench);
   const runs = state.settings.access?.course !== false;
-  const ctx = { f, info, p, g: a.gradeIdx, run: runs, block: block?.phase ?? null, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
+  const ctx = { f, info, p, g: a.gradeIdx, lv: (i) => withLevels(state.settings, grade(i)), run: runs, block: block?.phase ?? null, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
-  if (block?.goalWeek && type === 'escalade' && !t.reference) notes.unshift(`Semaine objectif : tu es frais, c'est le moment de tenter ton ${state.settings.goal.grade} !`);
+  if (block?.goalWeek && type === 'escalade' && !t.reference) notes.unshift(`Semaine objectif : tu es frais, c'est le moment de tenter ${block.goals.map((g) => `ton ${goalLabel(g)}`).join(' et ')} !`);
   else if (block?.phase === 'performance' && type === 'escalade' && !t.home) notes.unshift('Bloc performance : commence par tes projets, quand tu es frais.');
   const day = ymd(date);
   let items = raw.filter((e) => e.kind !== 'note').map((e) => applySwap(e, state, day, t.home ? 'home' : 'gym', p));
@@ -840,18 +916,18 @@ export function routineSession(date, state) {
 const TEMPLATES = {
   bloc: {
     type: 'escalade', title: 'Escalade bloc', restAfter: 120,
-    build: ({ info, g, sets, block }) => {
+    build: ({ info, g, lv, sets, block }) => {
       const easy = info.phaseIndex === 3 || block === 'affutage';
       const hard = block === 'force' || block === 'performance';
       return [
         MOBILITY,
-        { name: 'Montée en température', info: 'grimpe-echauffement', work: 600, timed: true, note: `6 à 8 blocs faciles (niveau ~${grade(g - 3)}), grimpés lentement et proprement.` },
+        { name: 'Montée en température', info: 'grimpe-echauffement', work: 600, timed: true, note: `6 à 8 blocs faciles (niveau ~${lv(g - 3)}), grimpés lentement et proprement.` },
         block === 'endurance'
-          ? { name: '4 × 4 en bloc', info: '4x4', sets: sets(3), reps: '4 blocs faciles enchaînés', work: 300, rest: 240, note: `Niveau ~${grade(g - 3)}, sans repos entre les 4 blocs.` }
-          : { name: 'Blocs au niveau', info: 'bloc-niveau', sets: sets(block === 'base' ? 6 : hard ? 4 : 5), reps: '2 à 3 essais', work: 150, rest: 180, unit: 'blocs', note: `Un bloc différent à chaque fois, autour de ${grade(g - 1)}.` },
+          ? { name: '4 × 4 en bloc', info: '4x4', sets: sets(3), reps: '4 blocs faciles enchaînés', work: 300, rest: 240, note: `Niveau ~${lv(g - 3)}, sans repos entre les 4 blocs.` }
+          : { name: 'Blocs au niveau', info: 'bloc-niveau', sets: sets(block === 'base' ? 6 : hard ? 4 : 5), reps: '2 à 3 essais', work: 150, rest: 180, unit: 'blocs', note: `Un bloc différent à chaque fois, autour de ${lv(g - 1)}.` },
         easy
           ? { name: `Séance technique (${info.phaseIndex === 3 ? 'décharge' : 'affûtage'})`, info: 'technique-pieds', work: 900, timed: true, note: 'Pas de projet cette semaine : blocs faciles en cherchant le geste parfait, pieds silencieux.' }
-          : { name: block === 'performance' ? 'Projets' : 'Projet', info: 'projet', sets: sets(hard ? 7 : block === 'base' ? 4 : 6), reps: '1 essai', work: 60, rest: 240, unit: 'essais', note: block === 'performance' ? `Tes projets (~${grade(g)} à ${grade(g + 1)}) : essais complets, 4 min de repos.` : `1 ou 2 blocs à ta limite (~${grade(g)}).` },
+          : { name: block === 'performance' ? 'Projets' : 'Projet', info: 'projet', sets: sets(hard ? 7 : block === 'base' ? 4 : 6), reps: '1 essai', work: 60, rest: 240, unit: 'essais', note: block === 'performance' ? `Tes projets (~${lv(g)} à ${lv(g + 1)}) : essais complets, 4 min de repos.` : `1 ou 2 blocs à ta limite (~${lv(g)}).` },
         info.week >= 5 && !easy
           ? { name: 'Poutre douce (salle d\'escalade)', info: 'poutre', label: 'Poutre', sets: sets(block === 'force' ? 6 : 5), inner: { work: 7, rest: 3, rounds: 6 }, rest: 120, note: 'Réglette 20 mm, prise tendue, pieds au sol si besoin. Effort 6/10 max.' }
           : info.week < 5 ? { kind: 'note', text: 'Pas de poutre avant la semaine 5 : on laisse tes poulies se réhabituer à la grimpe.' } : null,

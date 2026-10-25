@@ -196,19 +196,21 @@ export function climbPyramid(climbs, weeks = 8) {
   return `<h3>Pyramide des ${weeks} dernières semaines</h3>${frame(W, H, g)}`;
 }
 
-// Plan de saison : les blocs le long des semaines, le bloc en cours en couleur, la semaine actuelle marquée.
+// Plan de saison : les blocs le long des semaines, le bloc en cours en couleur, la semaine actuelle et les objectifs marqués.
 export function seasonChart(st, startYmd) {
-  const { plan, week } = st;
+  const { plans, week } = st;
   const W = 340, H = 86, L = 2, R = 2, T = 22, BH = 26;
-  const first = plan.fromWeek;
-  const n = plan.goalWeek - first + 1;
+  const first = plans[0].fromWeek;
+  const lastWeek = plans.at(-1).goalWeek;
+  const n = lastWeek - first + 1;
   const x = (w) => L + ((w - first) / n) * (W - L - R);
   const monday = (w) => { const d = parseYmd(startYmd); d.setDate(d.getDate() + 7 * (w - 1)); return d; };
   const day = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const blocks = plans.flatMap((p) => p.blocks);
   let g = '';
-  plan.blocks.forEach((b, i) => {
+  blocks.forEach((b, i) => {
     const x0 = x(b.from) + (i ? 1 : 0);
-    const x1 = x(b.to + 1) - (i < plan.blocks.length - 1 ? 1 : 0); // 2px d'écart entre blocs
+    const x1 = x(b.to + 1) - (i < blocks.length - 1 ? 1 : 0); // 2px d'écart entre blocs
     const cur = week >= b.from && week <= b.to;
     const name = BLOCKS[b.phase].name;
     const end = monday(b.to); end.setDate(end.getDate() + 6);
@@ -220,14 +222,21 @@ export function seasonChart(st, startYmd) {
     const tip = `<strong>${name}</strong> · ${b.to - b.from + 1} semaine${b.to > b.from ? 's' : ''}<br>du ${day(monday(b.from))} au ${day(end)}<br>${BLOCKS[b.phase].note}`;
     g += `<rect x="${x0}" y="${T - 6}" width="${Math.max(1, x1 - x0)}" height="${BH + 12}" class="hit" data-tip="${esc(tip)}"/>`;
   });
-  if (week >= first && week <= plan.goalWeek) {
-    const xn = x(week + 0.5);
+  const xn = week >= first && week <= lastWeek ? x(week + 0.5) : null;
+  if (xn != null) {
     g += `<line x1="${xn}" x2="${xn}" y1="${T - 4}" y2="${T + BH + 4}" class="now"/>`;
     g += `<text x="${Math.min(W - 30, Math.max(30, xn))}" y="${T - 9}" text-anchor="middle" class="axis value">Aujourd'hui</text>`;
   }
+  // Objectifs au-dessus de la fin de leur plan (sauf s'ils chevauchent « Aujourd'hui »).
+  plans.forEach((p) => {
+    const xg = x(p.goalWeek + 1);
+    const label = `🎯 ${p.goals.map((o) => o.level ?? o.grade).join(' · ')}`;
+    if (xn != null && Math.abs(xg - xn) < 90) return;
+    g += `<text x="${xg}" y="${T - 9}" text-anchor="end" class="axis value">${esc(label)}</text>`;
+  });
   // Mois sous la frise (semaine où le mois commence), espacés d'au moins 30 px.
   const months = [];
-  for (let w = first; w <= plan.goalWeek; w++) {
+  for (let w = first; w <= lastWeek; w++) {
     if (w === first || monday(w).getMonth() !== monday(w - 1).getMonth()) months.push({ xm: x(w), d: monday(w) });
   }
   if (months.length > 1 && months[1].xm - months[0].xm < 30) months.shift(); // mois de départ entamé

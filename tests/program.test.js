@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlan, blockAt, seasonStatus } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -537,8 +537,8 @@ test('plan de saison : blocs enchaînés jusqu\'à la date, affûtage à la fin'
     if (k >= 3) assert.ok(list.includes('force') && list.includes('endurance'), `${k}`);
   }
   const st = baseState();
-  st.settings.goal = { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' };
-  const plan = seasonPlan(st);
+  st.settings.goals = { voie: { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' } };
+  const [plan] = seasonPlans(st);
   assert.equal(plan.fromWeek, 1);
   assert.equal(plan.blocks[0].phase, 'base');
   assert.equal(plan.blocks.at(-1).phase, 'affutage');
@@ -576,17 +576,73 @@ test('plan de saison : blocs enchaînés jusqu\'à la date, affûtage à la fin'
 
 test('plan de saison : en avance ou en retard sur la cotation attendue', () => {
   const st = baseState();
-  st.settings.goal = { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' };
+  st.settings.goals = { voie: { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' } };
   const today = parseYmd('2027-02-10');
-  assert.equal(seasonStatus(st, today).pace, 'unknown');
+  const pace = (x) => x.goals[0].pace;
+  assert.equal(pace(seasonStatus(st, today)), 'unknown');
   st.climbs = [{ id: '1', date: '2027-02-06', kind: 'voie', grade: '6b', style: 'enchaine' }];
-  const behind = seasonStatus(st, today);
+  const behind = seasonStatus(st, today).goals[0];
   assert.equal(behind.pace, 'behind');
   assert.ok(behind.gap >= 1);
   st.climbs.push({ id: '2', date: '2027-02-08', kind: 'voie', grade: '7a', style: 'flash' });
-  assert.equal(seasonStatus(st, today).pace, 'reached');
+  assert.equal(pace(seasonStatus(st, today)), 'reached');
   st.climbs = [{ id: '3', date: '2027-02-08', kind: 'voie', grade: '7a', style: 'travail' }];
-  assert.equal(seasonStatus(st, today).pace, 'unknown', 'une voie en travail ne compte pas');
+  assert.equal(pace(seasonStatus(st, today)), 'unknown', 'une voie en travail ne compte pas');
   st.benchmarks = [{ date: '2026-10-26', pullups: 8, hang: 40 }, { date: '2027-01-25', pullups: 12, hang: 55 }];
   assert.deepEqual(seasonStatus(st, today).gains, [{ key: 'pullups', delta: 4 }, { key: 'hang', delta: 15 }]);
+});
+
+test('salles d\'escalade : niveaux maison et équivalence approximative', () => {
+  const settings = { gyms: structuredClone(DEFAULT_GYMS) };
+  assert.equal(nearestLevel(settings.gyms[0], '6b').name, 'Rose');
+  assert.equal(nearestLevel(settings.gyms[0], '6a+').name, 'Violet', 'à égalité, le niveau le plus facile');
+  assert.equal(nearestLevel(settings.gyms[1], '6c').name, '7');
+  assert.equal(withLevels(settings, '6b'), '6b · Rose / 6');
+  assert.equal(withLevels({ gyms: [] }, '6b'), '6b');
+  assert.equal(statGrade('7b+'), '7b');
+  assert.equal(statGrade('5a'), '5a');
+  // Les séances de bloc en salle donnent les niveaux de tes salles.
+  const st = baseState();
+  st.settings.access = { escalade: true, muscu: true };
+  st.settings.gyms = settings.gyms;
+  const bloc = buildSession('bloc', parseYmd('2026-11-04'), st);
+  assert.ok(bloc.exercises.some((e) => /6b · Rose \/ 6/.test(e.detail)), bloc.exercises.map((e) => e.detail).join(' | '));
+});
+
+test('objectifs voie et bloc : le plan suit le plus proche puis repart vers le suivant', () => {
+  const st = baseState();
+  st.settings.gyms = structuredClone(DEFAULT_GYMS);
+  st.settings.goals = {
+    voie: { kind: 'voie', grade: '7a', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' },
+    bloc: { kind: 'bloc', gym: 'g1', level: 'Rouge', grade: '6c', date: '2027-03-06', from: '2026-10-26', fromGrade: '6a' },
+  };
+  const plans = seasonPlans(st);
+  assert.equal(plans.length, 2);
+  assert.equal(plans[0].kind, 'bloc', 'l\'objectif le plus proche passe en premier');
+  assert.equal(plans[1].fromWeek, plans[0].goalWeek + 1, 'le plan voie repart après l\'objectif bloc');
+  assert.equal(plans[1].blocks.at(-1).phase, 'affutage');
+  assert.ok(plans[1].blocks[0].to > plans[1].blocks[0].from, 'pas de bloc d\'une semaine au départ');
+  const goalWeek = plans[0].goalWeek;
+  const d = parseYmd('2026-10-28'); d.setDate(d.getDate() + 7 * (goalWeek - 1));
+  st.settings.access = { escalade: true, muscu: true };
+  assert.ok(buildSession('bloc', d, st).notes.some((n) => n.includes('ton Rouge en bloc')));
+  // Le niveau visé suit l'équivalence réglée pour la salle.
+  assert.equal(goalGrade(st.settings.goals.bloc, st.settings), '6c');
+  st.settings.gyms[0].levels.find((l) => l.name === 'Rouge').grade = '6c+';
+  assert.equal(goalGrade(st.settings.goals.bloc, st.settings), '6c+');
+  // Un bloc Rose (≈ 6b) noté dans la salle compte pour l'objectif bloc, pas pour la voie.
+  st.climbs = [{ id: '1', date: '2027-01-20', kind: 'bloc', gym: 'g1', level: 'Rose', grade: '6b', style: 'enchaine' }];
+  const status = seasonStatus(st, parseYmd('2027-01-25'));
+  const bloc = status.goals.find((x) => x.goal.kind === 'bloc');
+  assert.equal(bloc.current, '6b');
+  assert.notEqual(bloc.pace, 'unknown');
+  assert.equal(status.goals.find((x) => x.goal.kind === 'voie').pace, 'unknown');
+  // Objectif fixé sans cotation connue : le départ est le max des deux premières semaines.
+  const fresh = { ...st, settings: { ...st.settings, goals: { bloc: { ...st.settings.goals.bloc, fromGrade: null } } }, climbs: [{ id: '2', date: '2026-10-29', kind: 'bloc', gym: 'g1', level: 'Violet', grade: '6a', style: 'flash' }] };
+  assert.equal(seasonStatus(fresh, parseYmd('2026-10-31')).goals[0].pace, 'on-track');
+  assert.ok(plans.every((p) => p.blocks.slice(0, -1).at(-1).to > p.blocks.slice(0, -1).at(-1).from), 'au moins deux semaines avant l\'affûtage');
+  // Deux objectifs la même semaine : un seul pic.
+  st.settings.goals.bloc.date = '2027-06-10';
+  assert.equal(seasonPlans(st).length, 1);
+  assert.equal(seasonPlans(st)[0].goals.length, 2);
 });

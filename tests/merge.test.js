@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isPristine, mergeStates } from '../js/merge.js';
-import { defaults, save } from '../js/store.js';
+import { defaults, normalize, save } from '../js/store.js';
 
 const log = (id, date) => ({ id, date, type: 'muscu', title: `Séance ${id}`, feeling: 'ok' });
 const state = (patch) => ({ ...defaults(), ...patch });
@@ -66,4 +66,13 @@ test('projets : essais notés sur deux téléphones le même jour et un autre jo
   assert.equal(m.projects[0].notes, 'talon à gauche');
   assert.deepEqual(Object.keys(m.projects[0].log).sort(), ['2026-11-01', '2026-11-03', '2026-11-04']);
   assert.ok(!isPristine(state({ projects: [p] })));
+});
+
+test('ancien objectif unique : devient l\'objectif de son type', () => {
+  const old = { ...defaults(), settings: { ...defaults().settings, goal: { kind: 'voie', grade: '7a', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' } } };
+  delete old.settings.goals;
+  const s = normalize(old);
+  assert.equal(s.settings.goal, undefined);
+  assert.equal(s.settings.goals.voie.grade, '7a');
+  assert.equal(s.settings.gyms.length, 2, 'salles par défaut');
 });

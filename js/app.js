@@ -1,7 +1,7 @@
 import {
   BENCH_TESTS, BLOCKS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
   buildSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSwap, swapChoices, tipFor,
-  blockAt, recentMax, seasonPlan, seasonStatus, weekInfo, weekSessions, ymd,
+  SCALE, blockAt, goalGrade, goalLabel, gradeTag, gymOf, levelGrade, nearestLevel, recentMax, seasonPlans, seasonStatus, statGrade, weekInfo, weekSessions, withLevels, ymd,
 } from './program.js';
 import {
   load, save, defaults, normalize, onSave,
@@ -33,7 +33,7 @@ let absOpen = false; // bloc « parcours abdos » déplié
 let routineOpen = false; // bloc « routine nuque et dos » déplié
 let formEdit = false; // questionnaire d'état de forme rouvert pour modification
 let editBench = null; // date des résultats de référence en cours de modification
-let lastClimb = { kind: 'bloc', grade: null }; // dernier type et cotation saisis dans le carnet d'escalade
+let lastClimb = { kind: 'bloc', grade: null, level: null, gym: null }; // dernier type, cotation et niveau saisis dans le carnet d'escalade
 let painOpen = false; // formulaire « Signaler une douleur » déplié
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -336,7 +336,7 @@ function render() {
   document.body.classList.toggle('guided-mode', view === 'guided');
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.go === view));
   const info = weekInfo(new Date(), state.settings.startDate);
-  const block = blockAt(seasonPlan(state), info.week);
+  const block = blockAt(seasonPlans(state), info.week);
   $('#week-badge').textContent = `Semaine ${info.week} · ${block ? block.name : info.phase.name}`;
   const main = $('#main');
   main.innerHTML = {
@@ -455,21 +455,56 @@ function bestClimb(date) {
 function climbLogger(date, intro = 'Note chaque voie ou bloc au fil de la séance.') {
   const list = (state.climbs || []).filter((c) => c.date === date);
   const grade = lastClimb.grade ?? GRADES[state.adapt.gradeIdx];
+  const level = lastClimb.level ?? levelValue(GRADES[state.adapt.gradeIdx]);
   const sends = list.filter(sentClimb).length;
   return `<details class="climbs" ${list.length || lastClimb.open === date ? 'open' : ''}>
       <summary>🧗 Carnet d'escalade${list.length ? ` <span class="muted small">· ${sends} enchaînée${sends > 1 ? 's' : ''} sur ${list.length}</span>` : ''}</summary>
-      ${list.length ? `<ul class="climb-list">${list.map((c) => `<li><span class="grade-tag${c.kind === 'bloc' ? ' bloc' : ''}">${c.grade}</span>
-        <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}${c.project ? ' · 🎯 projet' : ''}</span>
+      ${list.length ? `<ul class="climb-list">${list.map((c) => `<li><span class="grade-tag${c.kind === 'bloc' ? ' bloc' : ''}">${esc(gradeTag(c))}</span>
+        <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}${c.level ? ` <span class="muted">· ≈ ${c.grade}</span>` : ''}${c.project ? ' · 🎯 projet' : ''}</span>
         <button class="link" data-climb-del="${c.id}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : `<p class="small muted">${intro}</p>`}
       <form data-form="climb" data-date="${date}" class="stack climb-form">
-        <div class="climb-row">
-          <div class="seg">${['bloc', 'voie'].map((k) => `<label><input type="radio" name="kind" value="${k}" ${lastClimb.kind === k ? 'checked' : ''}><span>${k === 'voie' ? 'Voie' : 'Bloc'}</span></label>`).join('')}</div>
-          <select name="grade" aria-label="Cotation">${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}</select>
-        </div>
+        ${kindPicker(lastClimb.kind, grade, level)}
         <div class="seg">${Object.entries(CLIMB_STYLES).map(([k, l]) => `<label><input type="radio" name="style" value="${k}" ${k === 'enchaine' ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
         <button>+ Ajouter</button>
       </form>
     </details>`;
+}
+
+// Voie en cotation, bloc dans le niveau d'une de tes salles (ou en cotation) : le bon menu s'affiche selon le type.
+function kindPicker(kind, grade, level) {
+  return `<div class="climb-row">
+      <div class="seg">${['bloc', 'voie'].map((k) => `<label><input type="radio" name="kind" value="${k}" ${kind === k ? 'checked' : ''}><span>${k === 'voie' ? 'Voie' : 'Bloc'}</span></label>`).join('')}</div>
+      <span class="kind-bloc">${levelSelect('level', level)}</span>
+      <span class="kind-voie"><select name="grade" aria-label="Cotation">${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}</select></span>
+    </div>`;
+}
+
+function levelSelect(name, selected, label = 'Niveau') {
+  const opt = (value, text) => `<option value="${esc(value)}" ${value === selected ? 'selected' : ''}>${esc(text)}</option>`;
+  return `<select name="${name}" aria-label="${label}">
+      ${(state.settings.gyms || []).map((g) => `<optgroup label="${esc(g.name)}">${g.levels.map((l) => opt(`${g.id}|${l.name}`, l.name)).join('')}</optgroup>`).join('')}
+      <optgroup label="Cotation">${GRADES.map((x) => opt(`|${x}`, x)).join('')}</optgroup>
+    </select>`;
+}
+
+// « g1|Rose » → { gym, level, grade (équivalence) } ; « |6b » → { grade }.
+function parseLevel(v) {
+  const [gym, level] = String(v || '').split('|');
+  if (!gym) return { grade: level || GRADES[state.adapt.gradeIdx] };
+  return { gym, level, grade: statGrade(levelGrade(state.settings, gym, level) ?? GRADES[state.adapt.gradeIdx]) };
+}
+
+// Niveau proposé pour une cotation : le plus proche dans la dernière salle utilisée.
+function levelValue(grade, gymId = lastClimb.gym) {
+  const gym = gymOf(state.settings, gymId) || state.settings.gyms?.[0];
+  const l = gym && nearestLevel(gym, grade);
+  return l ? `${gym.id}|${l.name}` : `|${grade}`;
+}
+
+// Cotation affichée dans le repère d'une salle : « Rose (≈ 6b) ».
+function inGym(gymId, grade) {
+  const l = nearestLevel(gymOf(state.settings, gymId), grade);
+  return l ? `${esc(l.name)} (≈ ${grade})` : grade;
 }
 
 // ---------- Projets ----------
@@ -483,12 +518,13 @@ function projectProgress(p, st = projectStats(p)) {
   return `${plural(st.sessions, 'séance')}, ${plural(st.tries, 'essai')}${st.best ? `, point haut : ${highLabel(st.best)}` : ''}`;
 }
 
-const projectSummary = (p) => [kindLabel(p.kind), p.place && esc(p.place), projectProgress(p)].filter(Boolean).join(' · ');
+const projectWhere = (p) => [kindLabel(p.kind), p.gym && esc(gymOf(state.settings, p.gym)?.name ?? ''), p.level && `≈ ${p.grade}`, p.place && esc(p.place)].filter(Boolean);
+const projectSummary = (p) => [...projectWhere(p), projectProgress(p)].join(' · ');
 
 function projectHead(p) {
   return `<button class="project-head" data-project="${p.id}">
       <span class="photo thumb" hidden><img data-photo="${p.id}" alt=""></span>
-      <span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${p.grade}</span>
+      <span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${esc(gradeTag(p))}</span>
       <span class="project-name"><strong>${esc(p.name)}</strong><span class="small muted">${projectSummary(p)}</span></span>
     </button>`;
 }
@@ -499,7 +535,7 @@ function projectPanel(date, kind = null) {
   const sentToday = (state.projects || []).filter((p) => p.sent === date);
   return `<details class="projects" ${active.length || sentToday.length ? 'open' : ''}>
       <summary>🎯 Projets${active.length ? ` <span class="muted small">· ${active.length} en cours</span>` : ''}</summary>
-      ${sentToday.map((p) => `<p class="small sent-line">🎉 ${esc(p.name)} (${p.grade}) enchaîné aujourd'hui !</p>`).join('')}
+      ${sentToday.map((p) => `<p class="small sent-line">🎉 ${esc(p.name)} (${esc(gradeTag(p))}) enchaîné aujourd'hui !</p>`).join('')}
       ${active.length ? `<ul class="project-list">${active.map((p) => {
         const day = p.log?.[date] || {};
         const tries = day.tries || 0;
@@ -543,8 +579,8 @@ function openProjectSheet(id) {
   }[p.status];
   openSheet(`<div class="stack project-sheet">
       <figure class="photo big" hidden><img data-photo="${p.id}" alt="Photo du projet"></figure>
-      <h2><span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${p.grade}</span> ${esc(p.name)}</h2>
-      <p class="small muted">${[kindLabel(p.kind), p.place && esc(p.place), `depuis le ${shortDate(p.created)}`, PROJECT_STATUS[p.status].toLowerCase()].filter(Boolean).join(' · ')}</p>
+      <h2><span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${esc(gradeTag(p))}</span> ${esc(p.name)}</h2>
+      <p class="small muted">${[...projectWhere(p), `depuis le ${shortDate(p.created)}`, PROJECT_STATUS[p.status].toLowerCase()].join(' · ')}</p>
       ${p.notes ? `<p class="small project-notes">${esc(p.notes)}</p>` : ''}
       <p class="small">${projectProgress(p, st)[0].toUpperCase()}${projectProgress(p, st).slice(1)}.</p>
       ${st.sessions ? projectChart(p) : ''}
@@ -557,13 +593,11 @@ function openProjectSheet(id) {
 function openProjectForm(id, kind = 'bloc') {
   const p = id ? (state.projects || []).find((x) => x.id === id) : null;
   const k = p?.kind || kind;
-  const grade = p?.grade || suggestGrade(state, k);
+  const grade = p?.kind === 'voie' ? p.grade : suggestGrade(state, 'voie');
+  const level = p?.kind === 'bloc' ? (p.gym ? `${p.gym}|${p.level}` : `|${p.grade}`) : levelValue(suggestGrade(state, 'bloc'));
   openSheet(`<form data-form="project" data-id="${p?.id || ''}" class="stack project-form">
       <h2>${p ? 'Modifier le projet' : 'Nouveau projet'}</h2>
-      <div class="climb-row">
-        <div class="seg">${['bloc', 'voie'].map((x) => `<label><input type="radio" name="kind" value="${x}" ${x === k ? 'checked' : ''}><span>${kindLabel(x)}</span></label>`).join('')}</div>
-        <select name="grade" aria-label="Cotation">${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}</select>
-      </div>
+      ${kindPicker(k, grade, level)}
       <label>Nom <input name="name" maxlength="40" placeholder="Ex. le dévers jaune" value="${esc(p?.name || '')}"></label>
       <label>Secteur, couleur des prises <input name="place" maxlength="60" placeholder="Ex. mur du fond, prises vertes" value="${esc(p?.place || '')}"></label>
       <label>Notes <textarea name="notes" rows="3" maxlength="400" placeholder="Méthode, mouvement clé, pied à ne pas oublier…">${esc(p?.notes || '')}</textarea></label>
@@ -574,13 +608,15 @@ function openProjectForm(id, kind = 'bloc') {
 }
 
 async function submitProject(f, fd) {
-  const fields = { name: fd.get('name') || '', kind: fd.get('kind'), grade: fd.get('grade'), place: fd.get('place') || '', notes: fd.get('notes') || '' };
+  const kind = fd.get('kind');
+  const at = kind === 'bloc' ? parseLevel(fd.get('level')) : { grade: fd.get('grade') };
+  const fields = { name: fd.get('name') || '', kind, gym: undefined, level: undefined, ...at, place: fd.get('place') || '', notes: fd.get('notes') || '' };
   let p;
   if (f.dataset.id) {
     state.projects = (state.projects || []).map((x) => (x.id === f.dataset.id ? { ...x, ...fields, name: fields.name.trim() || x.name, place: fields.place.trim(), notes: fields.notes.trim() } : x));
     p = state.projects.find((x) => x.id === f.dataset.id);
     // Le projet enchaîné garde sa croix à jour dans le carnet d'escalade.
-    state.climbs = (state.climbs || []).map((c) => (c.project === p.id ? { ...c, kind: p.kind, grade: p.grade } : c));
+    state.climbs = (state.climbs || []).map((c) => (c.project === p.id ? { ...c, kind: p.kind, grade: p.grade, gym: p.gym, level: p.level } : c));
   } else {
     p = addProject(state, fields, ymd(new Date()));
   }
@@ -647,7 +683,7 @@ function sessionCard(s) {
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
         <h3>Comment ça s'est passé ?</h3>
-        ${feedbackFields(id, false, s.home ? 'maison' : s.type, hasRun, bestClimb(s.date))}
+        ${feedbackFields(id, false, s.home ? 'maison' : s.type, hasRun, bestClimb(s.date), s.key === 'bloc')}
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
@@ -697,12 +733,12 @@ function benchForm(date) {
     </form>`;
 }
 
-function feedbackFields(id, free, type, hasRun, maxGrade = null) {
+function feedbackFields(id, free, type, hasRun, maxGrade = null, levels = false) {
   return `<div class="seg" role="radiogroup" aria-label="Ressenti">
       ${['facile', 'ok', 'dur'].map((f) => `<label><input type="radio" name="feeling" value="${f}" required><span>${feelLabel(f)}</span></label>`).join('')}
     </div>
     ${free || hasRun ? `<label class="row"><input type="checkbox" name="stopped"> J'ai arrêté ${free ? 'la séance' : state.settings.access.course === false ? 'le cardio' : 'la course'} avant la fin</label>` : ''}
-    ${free || type === 'escalade' ? `<label>Cotation max enchaînée (escalade) <select name="maxGrade"><option value="">—</option>${GRADES.map((g) => `<option ${g === maxGrade ? 'selected' : ''}>${g}</option>`).join('')}</select></label>` : ''}
+    ${free || type === 'escalade' ? `<label>Cotation max enchaînée (escalade) <select name="maxGrade"><option value="">—</option>${GRADES.map((g) => `<option value="${g}" ${g === maxGrade ? 'selected' : ''}>${levels ? withLevels(state.settings, g) : g}</option>`).join('')}</select></label>` : ''}
     <fieldset class="zones"><legend>Une douleur ? <span class="muted small">Les exercices concernés seront retirés 7 jours</span></legend>${zoneChips('zone')}</fieldset>
     <label>Note <textarea name="note" rows="2" placeholder="Charges, sensations…"></textarea></label>`;
 }
@@ -751,7 +787,7 @@ function renderWeek() {
     return `<button class="link back" data-action="close-session">← Retour à la semaine</button>${sessionCard(s)}`;
   }
   const info = weekInfo(monday, state.settings.startDate);
-  const block = blockAt(seasonPlan(state), info.week);
+  const block = blockAt(seasonPlans(state), info.week);
   const sessions = weekSessions(monday, state);
   const end = new Date(monday); end.setDate(end.getDate() + 6);
   const f = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
@@ -957,36 +993,42 @@ const GAIN_LABEL = { pullups: ['tractions', ''], hang: ['suspension', ' s'], gri
 function seasonCard() {
   const st = seasonStatus(state);
   if (!st) {
-    return `<section class="card season-card"><h2>🎯 Objectif de saison</h2>
-      <p class="small muted">Fixe une cotation et une date (par exemple 7a en voie en juin) : tes cycles s'enchaînent en blocs base, force, force-endurance et performance, puis deux semaines d'affûtage.</p>
+    return `<section class="card season-card"><h2>🎯 Objectifs de saison</h2>
+      <p class="small muted">Fixe une cotation en voie (7a en juin, par exemple) et un niveau en bloc dans ta salle : tes cycles s'enchaînent en blocs base, force, force-endurance et performance, puis deux semaines d'affûtage avant chaque date.</p>
       <button data-go="settings">Fixer un objectif</button></section>`;
   }
-  const { plan, block } = st;
-  const date = parseYmd(plan.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-  const weeks = Math.ceil(st.daysLeft / 7);
-  const when = st.over ? 'date passée' : st.daysLeft <= 0 ? 'c\'est aujourd\'hui' : st.daysLeft < 14 ? `dans ${st.daysLeft} jours` : `dans ${weeks} semaines`;
-  const kind = KIND_LABEL[plan.kind];
-  const pace = {
-    unknown: `Pas de ${kind} notée ces 8 dernières semaines : note-les au carnet d'escalade pour suivre ta progression.`,
-    behind: `Attendu cette semaine : <strong>${st.expected}</strong>. Ton max récent : <strong>${st.current}</strong>, ${st.gap} cotation${st.gap > 1 ? 's' : ''} de retard. Garde le cap : tes séances d'escalade et les blocs de force font la différence.`,
-    'on-track': `Dans les temps : <strong>${st.current}</strong> pour ${st.expected} attendu cette semaine.`,
-    ahead: `En avance : <strong>${st.current}</strong> pour ${st.expected} attendu cette semaine. 🎉`,
-    reached: `Objectif atteint : <strong>${st.current}</strong> enchaîné ! Fixe-toi le suivant dans Réglages.`,
-  }[st.pace];
+  const { block } = st;
+  const show = (g, grade) => (g.gym ? inGym(g.gym, grade) : grade);
+  const goalLine = (x) => {
+    const g = x.goal;
+    const date = parseYmd(g.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    const when = x.over ? 'date passée' : x.daysLeft <= 0 ? 'c\'est aujourd\'hui' : x.daysLeft < 14 ? `dans ${x.daysLeft} jours` : `dans ${Math.ceil(x.daysLeft / 7)} semaines`;
+    const kind = KIND_LABEL[g.kind];
+    const pace = x.over ? 'La date est passée : fixe un nouvel objectif dans Réglages.' : {
+      unknown: `Pas de ${kind} notée ces 8 dernières semaines : note-les au carnet d'escalade pour suivre ta progression.`,
+      behind: `Attendu cette semaine : <strong>${show(g, x.expected)}</strong>. Ton max récent : <strong>${show(g, x.current)}</strong>, ${x.gap} cotation${x.gap > 1 ? 's' : ''} de retard. Garde le cap : les séances d'escalade et les blocs de force font la différence.`,
+      'on-track': `Dans les temps : <strong>${show(g, x.current)}</strong> pour ${show(g, x.expected)} attendu cette semaine.`,
+      ahead: `En avance : <strong>${show(g, x.current)}</strong> pour ${show(g, x.expected)} attendu cette semaine. 🎉`,
+      reached: `Objectif atteint : <strong>${show(g, x.current)}</strong> enchaîné ! Fixe-toi le suivant dans Réglages.`,
+    }[x.pace];
+    return `<div class="goal-line"><h3>🎯 ${esc(goalLabel(g))}${g.gym && gymOf(state.settings, g.gym) ? ` <span class="muted small">· ${esc(gymOf(state.settings, g.gym).name)}</span>` : ''}</h3>
+      <p class="small muted">Le ${date}, ${when}.</p><p class="small">${pace}</p></div>`;
+  };
   const gains = st.gains.map((g) => `${GAIN_LABEL[g.key][0]} ${g.delta > 0 ? '+' : ''}${g.delta}${GAIN_LABEL[g.key][1]}`);
   const monday = (w) => { const d = parseYmd(state.settings.startDate); d.setDate(d.getDate() + 7 * (w - 1)); return d; };
   return `<section class="card season-card">
-      <h2>🎯 ${plan.grade} en ${kind}</h2>
-      <p class="small muted">Le ${date}, ${when}.</p>
+      <h2>🎯 ${st.goals.length > 1 ? 'Objectifs de saison' : esc(goalLabel(st.goals[0].goal))}</h2>
       ${seasonChart(st, state.settings.startDate)}
       ${block ? `<p class="small">Bloc en cours : <strong>${block.name}</strong>, semaine ${block.weekIn} sur ${block.weeks}. ${block.note}</p>` : ''}
-      ${st.over ? '<p class="small">La date est passée : fixe un nouvel objectif dans Réglages.</p>' : `<p class="small">${pace}</p>`}
+      ${st.goals.map(goalLine).join('')}
       ${gains.length ? `<p class="small muted">Depuis le début du plan : ${gains.join(', ')}.</p>` : ''}
       <details><summary class="small">Tous les blocs</summary>
-        <table class="table"><tbody>${plan.blocks.map((b) => `<tr class="${block?.from === b.from ? 'cur' : ''}"><td>${BLOCKS[b.phase].name}</td>
-          <td class="num">${b.to - b.from + 1} sem.</td><td class="num">${shortDate(ymd(monday(b.from)))}</td></tr>`).join('')}</tbody></table>
+        <table class="table"><tbody>${st.plans.map((plan) => `${plan.blocks.map((b) => `<tr class="${block && week(b) ? 'cur' : ''}"><td>${BLOCKS[b.phase].name}</td>
+          <td class="num">${b.to - b.from + 1} sem.</td><td class="num">${shortDate(ymd(monday(b.from)))}</td></tr>`).join('')}
+          <tr class="goal-row"><td colspan="2">🎯 ${plan.goals.map((g) => esc(goalLabel(g))).join(' et ')}</td><td class="num">${shortDate(plan.date)}</td></tr>`).join('')}</tbody></table>
       </details>
     </section>`;
+  function week(b) { return st.week >= b.from && st.week <= b.to; }
 }
 
 function climbStats() {
@@ -1051,12 +1093,15 @@ function renderSettings() {
         <label>Soir <input type="time" name="soir" value="${s.times.soir}"></label>
         <label>Week-end <input type="time" name="weekend" value="${s.times.weekend}"></label>
       </div>
-      <h2>Objectif de saison</h2>
-      <p class="small muted">Tes cycles s'enchaînent en blocs (base, force, force-endurance, performance) jusqu'à deux semaines d'affûtage avant la date. Laisse la date vide pour garder les cycles de 4 semaines.</p>
-      <div class="grid3">
-        <label>Cotation <select name="goalGrade">${GRADES.slice(1).map((g) => `<option ${g === (s.goal?.grade || '7a') ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
-        <label>En <select name="goalKind">${['voie', 'bloc'].map((k) => `<option value="${k}" ${k === (s.goal?.kind || 'voie') ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
-        <label>Pour le <input type="date" name="goalDate" value="${s.goal?.date || ''}"></label>
+      <h2>Objectifs de saison</h2>
+      <p class="small muted">Une date par objectif. Tes cycles s'enchaînent en blocs (base, force, force-endurance, performance) jusqu'à deux semaines d'affûtage avant l'objectif le plus proche, puis repartent vers le suivant. Laisse la date vide pour ne pas en fixer.</p>
+      <div class="goal-set">
+        <span class="goal-kind">Voie</span>
+        <select name="goal-voie" aria-label="Cotation visée en voie">${GRADES.slice(1).map((g) => `<option ${g === (s.goals?.voie?.grade || '7a') ? 'selected' : ''}>${g}</option>`).join('')}</select>
+        <input type="date" name="goal-voie-date" aria-label="Date de l'objectif voie" value="${s.goals?.voie?.date || ''}">
+        <span class="goal-kind">Bloc</span>
+        ${levelSelect('goal-bloc', s.goals?.bloc ? (s.goals.bloc.gym ? `${s.goals.bloc.gym}|${s.goals.bloc.level}` : `|${s.goals.bloc.grade}`) : levelValue(GRADES[Math.min(GRADES.length - 1, state.adapt.gradeIdx + 2)]), 'Niveau visé en bloc')}
+        <input type="date" name="goal-bloc-date" aria-label="Date de l'objectif bloc" value="${s.goals?.bloc?.date || ''}">
       </div>
       <h2>Mes accès</h2>
       <p class="small muted">Sans abonnement, les séances sont remplacées par des versions à la maison (barre de traction, haltère, gilet lesté, pompes). Sans course, le cardio passe sur vélo ou rameur en salle, ou en circuit à la maison.</p>
@@ -1069,6 +1114,7 @@ function renderSettings() {
       <label class="row"><input type="checkbox" name="voice" ${s.voice ? 'checked' : ''}> Annonces vocales pendant la séance guidée</label>
       <button class="primary">Enregistrer</button>
     </form>
+    ${gymsForm()}
     <section class="card stack">
       <h2>Notifications</h2>
       <p class="small muted">Fin de chrono et conseil du jour. Le rappel automatique appli fermée dépend d'Android : installe l'appli sur l'écran d'accueil et ouvre-la de temps en temps pour qu'il reste actif.</p>
@@ -1283,6 +1329,13 @@ document.addEventListener('click', async (e) => {
     persist(); render();
     return toast(`${ZONES[d.heal]} : exercices de nouveau proposés. Reprends en douceur.`);
   }
+  if (d.gymAdd !== undefined || d.gymDel !== undefined) {
+    applyGyms(new FormData(t.closest('form')));
+    const gyms = state.settings.gyms;
+    if (d.gymDel !== undefined) gyms.splice(Number(d.gymDel), 1);
+    else gyms.push({ id: `g${Date.now().toString(36)}`, name: `Salle ${gyms.length + 1}`, levels: ['Facile', 'Moyen', 'Difficile', 'Très difficile'].map((name, i) => ({ name, grade: SCALE[2 + i * 2] })) });
+    persist(); return render();
+  }
   if (d.project) return openProjectSheet(d.project);
   if (d.projectNew) return openProjectForm(null, d.projectNew);
   if (d.projectEdit) return openProjectForm(d.projectEdit);
@@ -1296,7 +1349,7 @@ document.addEventListener('click', async (e) => {
     const p = sendProject(state, id, date);
     persist(); render();
     const st = projectStats(p);
-    return toast(`🎉 ${p.name} (${p.grade}) enchaîné en ${plural(st.tries, 'essai')} sur ${plural(st.sessions, 'séance')} ! Ajouté au carnet d'escalade.`, 5000);
+    return toast(`🎉 ${p.name} (${gradeTag(p)}) enchaîné en ${plural(st.tries, 'essai')} sur ${plural(st.sessions, 'séance')} ! Ajouté au carnet d'escalade.`, 5000);
   }
   if (d.pstatus) {
     const [id, status] = d.pstatus.split('|');
@@ -1481,11 +1534,15 @@ document.addEventListener('submit', (e) => {
     return toast(`Séances adaptées pour 7 jours (${zones.map((z) => ZONES[z].toLowerCase()).join(', ')}). Reprends dès que ça va mieux.`, 5000);
   }
   if (kind === 'climb') {
-    const climb = { id: `${Date.now()}`, date: f.dataset.date, kind: fd.get('kind'), grade: fd.get('grade'), style: fd.get('style') };
+    const kindV = fd.get('kind');
+    const at = kindV === 'bloc' ? parseLevel(fd.get('level')) : { grade: fd.get('grade') };
+    const climb = { id: `${Date.now()}`, date: f.dataset.date, kind: kindV, ...at, style: fd.get('style') };
     state.climbs = [...(state.climbs || []), climb];
-    lastClimb = { kind: climb.kind, grade: climb.grade, open: climb.date };
+    lastClimb = kindV === 'bloc'
+      ? { ...lastClimb, kind: 'bloc', level: fd.get('level'), gym: at.gym ?? lastClimb.gym, open: climb.date }
+      : { ...lastClimb, kind: 'voie', grade: climb.grade, open: climb.date };
     persist(); render();
-    return toast(`${climb.kind === 'voie' ? 'Voie' : 'Bloc'} ${climb.grade} noté${climb.kind === 'voie' ? 'e' : ''} (${CLIMB_STYLES[climb.style].toLowerCase()}).`, 2000);
+    return toast(`${kindV === 'voie' ? 'Voie' : 'Bloc'} ${gradeTag(climb)} noté${kindV === 'voie' ? 'e' : ''} (${CLIMB_STYLES[climb.style].toLowerCase()}).`, 2000);
   }
   if (kind === 'bench') {
     const entry = { date: f.dataset.date };
@@ -1517,32 +1574,87 @@ document.addEventListener('submit', (e) => {
     s.sound = !!fd.get('sound');
     s.vibrate = !!fd.get('vibrate');
     s.voice = !!fd.get('voice');
-    const msg = saveGoal(fd);
-    persist(); render(); toast(msg || 'Réglages enregistrés.', msg ? 5000 : 3500);
+    const msg = saveGoals(fd);
+    persist(); render(); toast(msg || 'Réglages enregistrés.', msg ? 6000 : 3500);
+  }
+  if (kind === 'gyms') {
+    applyGyms(fd);
+    persist(); render();
+    toast('Salles enregistrées.', 2000);
   }
 });
 
-// Objectif de saison : le plan démarre la semaine où il est fixé, depuis ta meilleure cotation récente.
-function saveGoal(fd) {
+// Objectifs de saison : chaque plan démarre la semaine où l'objectif est fixé, depuis ta meilleure cotation récente.
+function saveGoals(fd) {
   const s = state.settings;
-  const date = fd.get('goalDate');
-  if (!date) {
-    if (!s.goal) return '';
-    s.goal = null;
-    return 'Objectif retiré : retour aux cycles de 4 semaines.';
-  }
   const now = new Date();
-  const soon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21);
-  if (date < ymd(soon)) return 'Choisis une date dans au moins 3 semaines pour que le plan ait le temps de s\'enchaîner.';
-  const kind = fd.get('goalKind');
-  const prev = s.goal?.kind === kind ? s.goal : null;
-  s.goal = {
-    grade: fd.get('goalGrade'), kind, date,
-    from: prev?.from || ymd(mondayOf(now)),
-    fromGrade: prev?.fromGrade || recentMax(state, kind) || GRADES[state.adapt.gradeIdx],
+  const soon = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21));
+  const goals = { ...(s.goals || {}) };
+  const notes = [];
+  for (const kind of ['voie', 'bloc']) {
+    const date = fd.get(`goal-${kind}-date`);
+    const prev = goals[kind];
+    if (!date) {
+      if (prev) { delete goals[kind]; notes.push(`objectif ${kind} retiré`); }
+      continue;
+    }
+    const at = kind === 'voie' ? { grade: fd.get('goal-voie') } : parseLevel(fd.get('goal-bloc'));
+    if (prev && prev.date === date && (prev.level ?? prev.grade) === (at.level ?? at.grade) && prev.gym === at.gym) continue;
+    if (date < soon) { notes.push(`date ${kind} trop proche, choisis-la dans au moins 3 semaines`); continue; }
+    goals[kind] = {
+      kind, date, ...at,
+      from: prev?.from || ymd(mondayOf(now)),
+      fromGrade: prev?.fromGrade || recentMax(state, kind) || null,
+    };
+    notes.push(`objectif ${goalLabel(goals[kind])} fixé`);
+  }
+  s.goals = goals;
+  if (!notes.length) return '';
+  const plans = seasonPlans(state).map((plan) => `${plan.goals.map(goalLabel).join(' et ')} : ${plan.blocks.map((b) => `${BLOCKS[b.phase].name.toLowerCase()} (${b.to - b.from + 1} sem.)`).join(', ')}`);
+  const msg = notes.join(', ');
+  return `${msg[0].toUpperCase()}${msg.slice(1)}.${plans.length ? ` ${plans.join('. ')}.` : ' Retour aux cycles de 4 semaines.'}`;
+}
+
+// ---------- Salles d'escalade ----------
+function gymsForm() {
+  const gyms = state.settings.gyms || [];
+  return `<form class="card stack" data-form="gyms">
+      <h2>Mes salles d'escalade</h2>
+      <p class="small muted">Les niveaux de bloc de chaque salle, du plus facile au plus dur. L'équivalence en cotation est approximative : elle sert à comparer tes salles et à suivre ta progression, ajuste-la à l'ouverture de ta salle.</p>
+      ${gyms.map((g, gi) => `<fieldset class="gym">
+        <label>Nom <input name="name-${gi}" maxlength="40" value="${esc(g.name)}"></label>
+        <label>Niveaux, séparés par des virgules <input name="levels-${gi}" value="${esc(g.levels.map((l) => l.name).join(', '))}"></label>
+        <details><summary class="small">Équivalences en cotation</summary>
+          <div class="eq-grid">${g.levels.map((l, li) => `<label>${esc(l.name)} <select name="eq-${gi}-${li}">${SCALE.map((x) => `<option ${x === l.grade ? 'selected' : ''}>${x}</option>`).join('')}</select></label>`).join('')}</div>
+        </details>
+        ${gyms.length > 1 ? `<button type="button" class="link danger-link" data-gym-del="${gi}">Retirer cette salle</button>` : ''}
+      </fieldset>`).join('')}
+      <button type="button" data-gym-add>+ Ajouter une salle</button>
+      <button class="primary">Enregistrer mes salles</button>
+    </form>`;
+}
+
+// Relit le formulaire : un niveau gardé conserve son équivalence, un nouveau est placé entre 5a et 7a selon son rang.
+function applyGyms(fd) {
+  const old = state.settings.gyms || [];
+  state.settings.gyms = old.map((g, gi) => {
+    const names = String(fd.get(`levels-${gi}`) ?? '').split(',').map((x) => x.replace(/\|/g, '').trim()).filter(Boolean);
+    if (!names.length) return g;
+    const levels = names.map((name, li) => {
+      const before = g.levels.findIndex((l) => l.name === name);
+      const picked = before >= 0 ? fd.get(`eq-${gi}-${before}`) : null;
+      const spread = SCALE[Math.round(1 + (names.length > 1 ? li / (names.length - 1) : 0.5) * 9)];
+      return { name, grade: SCALE.includes(picked) ? picked : spread };
+    });
+    return { ...g, name: String(fd.get(`name-${gi}`) || g.name).trim() || g.name, levels };
+  });
+  // Les blocs et projets notés dans un niveau suivent sa nouvelle équivalence.
+  const regrade = (x) => {
+    const g = x.gym && levelGrade(state.settings, x.gym, x.level);
+    return g ? { ...x, grade: statGrade(g) } : x;
   };
-  const plan = seasonPlan(state);
-  return `Objectif ${s.goal.grade} en ${kind} : ${plan.blocks.map((b) => `${BLOCKS[b.phase].name.toLowerCase()} (${b.to - b.from + 1} sem.)`).join(', ')}.`;
+  state.climbs = (state.climbs || []).map(regrade);
+  state.projects = (state.projects || []).map(regrade);
 }
 
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') e.currentTarget.hidden = true; });
