@@ -13,7 +13,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 const shots = process.env.SHOTS;
 const shot = async (name) => { if (shots) await page.screenshot({ path: `${shots}/${name}.png`, fullPage: true }); };
-const PLAN = 'section.session:not(.ref-session)';
+const PLAN = 'section.session:not(.ref-session):not(.bonus-session)';
 const check = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 try {
@@ -67,6 +67,11 @@ try {
   await page.click('[data-heal="doigts"]');
   check((await page.textContent(`${PLAN} .exercises`)).includes('Suspensions actives'), 'exercices rétablis');
 
+  // Parcours abdos : séance à lancer quand on veut, version maison.
+  await page.click('.abs-wrap summary');
+  check((await page.textContent('.abs-wrap h2')).includes('Parcours abdos à la maison'), 'parcours abdos maison');
+  await shot('0g-abdos');
+
   // Active les accès en salle.
   await page.click('nav [data-go="settings"]');
   await page.check('input[name=accessEscalade]');
@@ -95,6 +100,38 @@ try {
   await page.waitForSelector('.bench-summary');
   check((await page.textContent('#toast')).includes('Pince : 28 kg'), 'résumé de l\'adaptation');
   await shot('0c-reference');
+  check((await page.textContent('.abs-wrap h2')).includes('en salle'), 'parcours abdos en salle avec l\'abonnement');
+
+  // Prise de référence guidée : résultat saisi à la fin de chaque test, temps tenu proposé à la validation.
+  const title = () => page.textContent('#g-title');
+  const skipTo = async (name) => {
+    for (let k = 0; k < 60 && !(await title()).includes(name); k++) {
+      if (await page.isVisible('#sheet')) await page.click('#sheet [data-action="close-sheet"]');
+      await page.click('#g-nextbtn');
+    }
+  };
+  await page.click('.ref-wrap:not(.abs-wrap) [data-guided]');
+  await page.waitForSelector('.guided');
+  await skipTo('Test : pompes');
+  await page.click('#g-nextbtn');
+  await page.waitForSelector('[data-form="bench-one"]');
+  await page.fill('[data-form="bench-one"] input[name=value]', '30');
+  await page.click('[data-form="bench-one"] button.primary');
+  check((await page.textContent('#toast')).includes('Pompes max : 30'), 'max de pompes saisi en fin de test');
+  await skipTo('Test : suspension');
+  check((await page.textContent('#g-hint')).includes('dès que tu lâches'), 'consigne du test au temps');
+  await page.clock.runFor(42000);
+  await page.click('#g-nextbtn');
+  await page.waitForSelector('[data-form="bench-one"]');
+  check((await page.textContent('.bench-prompt')).includes('Temps mesuré : 42 s'), 'temps tenu mesuré au ✓');
+  check((await page.inputValue('[data-form="bench-one"] input[name=value]')) === '42', 'temps proposé à confirmer');
+  await shot('0h-test-temps');
+  await page.click('[data-form="bench-one"] [data-bstep="1"]');
+  await page.click('[data-form="bench-one"] button.primary');
+  check((await page.textContent('#toast')).includes('43 s'), 'temps corrigé à la main');
+  await page.click('#g-quit');
+  await page.click('#g-quit');
+  await page.waitForSelector('.session');
 
   // Fiche tuto d'un exercice.
   await page.click('.info-btn >> nth=1');

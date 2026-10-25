@@ -452,6 +452,93 @@ Object.assign(GUIDES, {
     errors: ['Partir trop vite et marcher ensuite.'],
     tip: 'L\'appli en déduit ta VMA et tes allures de footing et de fractionné.',
   },
+
+  // ---------- Parcours abdos ----------
+  'crunch-inverse': {
+    title: 'Crunch inversé', query: 'crunch inversé reverse crunch technique',
+    steps: [
+      'Allongé sur le dos, bras le long du corps, genoux pliés à 90° au-dessus des hanches.',
+      'Expire et enroule le bassin vers la poitrine : les fesses décollent du sol.',
+      'Redescends lentement vertèbre par vertèbre, sans reposer les pieds.',
+    ],
+    errors: ['Balancer les jambes pour prendre de l\'élan.', 'Creuser le bas du dos en redescendant.'],
+    tip: 'La tête reste au sol : aucun effort pour la nuque, idéal avec tes blocages.',
+  },
+  'russian-twist': {
+    title: 'Russian twist avec haltère', query: 'russian twist haltère technique dos droit',
+    steps: [
+      'Assis, genoux pliés, talons au sol, buste incliné en arrière à 45°, dos droit.',
+      'Tiens l\'haltère à deux mains contre la poitrine.',
+      'Tourne les épaules d\'un côté puis de l\'autre, le regard suit les mains. Une rotation de chaque côté = 2.',
+      'Pieds décollés seulement quand c\'est facile.',
+    ],
+    errors: ['Arrondir le dos.', 'Bouger seulement les bras : ce sont les épaules qui tournent.'],
+  },
+  'mountain-climbers': {
+    title: 'Mountain climbers', query: 'mountain climbers technique gainage',
+    steps: [
+      'Position de pompe, mains sous les épaules, corps gainé.',
+      'Ramène un genou vers la poitrine puis l\'autre, en alternance rapide.',
+      'Les hanches restent à la hauteur des épaules.',
+    ],
+    errors: ['Lever les fesses.', 'Laisser les épaules partir en arrière des mains.'],
+  },
+  'crunch-poulie': {
+    title: 'Crunch à la poulie haute', query: 'crunch poulie haute à genoux technique',
+    steps: [
+      'À genoux face à la poulie haute, corde tenue de chaque côté de la tête.',
+      'Enroule le buste vers le sol en rapprochant les côtes du bassin, les hanches restent fixes.',
+      'Remonte lentement en gardant la tension.',
+    ],
+    errors: ['Tirer avec les bras ou la nuque.', 'S\'asseoir sur les talons pour descendre.'],
+    tip: 'Regard vers le sol, nuque relâchée.',
+  },
+  'chaise-romaine': {
+    title: 'Relevés de jambes à la chaise romaine', query: 'relevé de jambes chaise romaine captain chair technique',
+    steps: [
+      'Avant-bras sur les appuis, dos plaqué contre le dossier, épaules basses.',
+      'Monte les genoux vers la poitrine en enroulant le bassin.',
+      'Redescends lentement sans balancer. Jambes tendues quand c\'est facile.',
+    ],
+    errors: ['Se balancer.', 'Monter seulement les cuisses sans enrouler le bassin.'],
+  },
+  'bucheron-poulie': {
+    title: 'Bûcheron à la poulie', query: 'woodchopper poulie bûcheron abdos obliques',
+    steps: [
+      'De profil à la poulie réglée en haut, poignée à deux mains, bras presque tendus.',
+      'Tire en diagonale vers la hanche opposée en tournant les épaules, pivote sur le pied arrière.',
+      'Reviens lentement, puis change de côté.',
+    ],
+    errors: ['Tirer avec les bras au lieu de tourner le buste.', 'Arrondir le dos.'],
+  },
+  pallof: {
+    title: 'Pallof press', query: 'pallof press technique anti rotation',
+    steps: [
+      'De profil à la poulie réglée à hauteur de poitrine, poignée contre le sternum.',
+      'Pousse les bras devant toi sans laisser le buste tourner vers la poulie, tiens 2 secondes.',
+      'Ramène la poignée et recommence, puis change de côté.',
+    ],
+    errors: ['Laisser les hanches ou les épaules pivoter.', 'Prendre trop lourd.'],
+    tip: 'Exercice anti-rotation : excellent pour le dos et le gainage en grimpe.',
+  },
+  'roue-abdos': {
+    title: 'Roue abdominale', query: 'roue abdominale ab wheel débutant genoux technique',
+    steps: [
+      'À genoux, mains sur la roue sous les épaules, dos légèrement arrondi.',
+      'Roule vers l\'avant en gardant le bassin rentré, aussi loin que tu peux sans creuser le dos.',
+      'Reviens en tirant avec les abdos.',
+    ],
+    errors: ['Creuser le bas du dos.', 'Aller trop loin dès le début : augmente l\'amplitude peu à peu.'],
+  },
+  'extensions-lombaires': {
+    title: 'Extensions lombaires au banc', query: 'extension lombaire banc à 45 degrés technique',
+    steps: [
+      'Sur le banc à 45°, hanches calées sur le coussin, bras croisés sur la poitrine.',
+      'Descends le buste en gardant le dos droit, puis remonte jusqu\'à l\'alignement jambes-buste.',
+      'Contracte les fessiers en haut.',
+    ],
+    errors: ['Remonter au-delà de l\'alignement en cambrant.', 'Aller vite.'],
+  },
 });
 
 export function videoUrl(guide) {

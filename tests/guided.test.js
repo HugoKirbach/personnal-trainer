@@ -69,3 +69,24 @@ test('la séance guidée parle au départ et à la fin', () => {
   assert.match(said[1], /Footing/);
   assert.equal(said.at(-1), 'Séance terminée. Bravo !');
 });
+
+test('un test maximal transmet le temps tenu au moment du ✓', () => {
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  try {
+    const done = [];
+    const s = buildSession('reference', parseYmd('2026-10-28'), state);
+    const r = new GuidedRunner(s, () => {}, { sound: () => false, vibrate: () => false, onExerciseDone: (i, ms) => done.push([i, ms]), onFinish: () => {} });
+    const k = r.steps.findIndex((x) => x.title === 'Test : suspension max');
+    r.start();
+    r.enter(k);
+    now += 42_000;
+    r.next();
+    r.stop();
+    const ex = s.exercises.findIndex((e) => e.test === 'hang');
+    assert.deepEqual(done.at(-1), [ex, 42_000]);
+  } finally {
+    Date.now = realNow;
+  }
+});

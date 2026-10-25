@@ -1,6 +1,6 @@
 import {
-  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, ZONES, activePains, adapt, addPains, benchDue, benchSummary, buildSession, fmtDuration, healPain,
-  mondayOf, parseYmd, referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
+  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary, buildSession, fmtDuration,
+  healPain, mondayOf, parseYmd, recordBench, referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
 } from './program.js';
 import { load, save, defaults } from './store.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
@@ -18,6 +18,7 @@ let view = 'today';
 let weekOffset = 0;
 let openSession = null; // { date, index } affiché en détail depuis la semaine
 let refOpen = false; // bloc « prise de référence » déplié
+let absOpen = false; // bloc « parcours abdos » déplié
 let editBench = null; // date des résultats de référence en cours de modification
 let lastClimb = { kind: 'bloc', grade: null }; // dernier type et cotation saisis dans le carnet d'escalade
 let painOpen = false; // formulaire « Signaler une douleur » déplié
@@ -67,6 +68,7 @@ let liftStep = null; // étape dont les compteurs répétitions / charge sont af
 function findSession(id) {
   const [date, idx] = id.split('#');
   if (idx === 'ref') return referenceSession(parseYmd(date), state);
+  if (idx === 'abs') return absSession(parseYmd(date), state);
   return weekSessions(mondayOf(parseYmd(date)), state).find((x) => x.index === Number(idx));
 }
 
@@ -76,14 +78,16 @@ function startGuided(id) {
   guidedId = id;
   guidedView = null;
   if (s.reference) refOpen = true;
+  if (s.bonus) absOpen = true;
   guided = new GuidedRunner(s, (v) => { guidedView = v; if (view === 'guided') paintGuided(); }, {
     sound: () => state.settings.sound,
     vibrate: () => state.settings.vibrate,
-    onExerciseDone: (i) => {
+    onExerciseDone: (i, elapsedMs) => {
       const list = new Set(state.checks[id] || []);
       list.add(i);
       state.checks[id] = [...list];
       save(state);
+      if (s.exercises[i].test) promptBench(s.exercises[i].test, s.date, elapsedMs);
     },
     onFinish: () => {
       releaseWake();
@@ -104,7 +108,7 @@ function quitGuided() {
   guided = null;
   guidedId = null;
   const [date, idx] = id.split('#');
-  if (date === ymd(new Date())) return go('today');
+  if (date === ymd(new Date()) || Number.isNaN(Number(idx))) return go('today');
   view = 'week';
   openSession = { date, index: Number(idx) };
   render();
@@ -209,6 +213,33 @@ function stepLift(field, dir) {
   }
 }
 
+// ---------- Résultat d'un test de la prise de référence ----------
+const BENCH_HINT = { gripper: 'Charge max fermée proprement.', cooper: 'Distance parcourue en 12 minutes.' };
+const BENCH_STEP = { gripper: 5, cooper: 50 };
+
+function promptBench(key, date, elapsedMs) {
+  const t = BENCH_TESTS.find((b) => b.key === key);
+  const current = (state.benchmarks || []).find((b) => b.date === date)?.[key];
+  // Tests au temps : le chrono a tourné jusqu'au ✓, on propose ce temps à confirmer.
+  const measured = t.unit === 'secondes' && elapsedMs > 0 ? Math.round(elapsedMs / 1000) : null;
+  const value = measured ?? current ?? '';
+  const step = BENCH_STEP[key] || 1;
+  openSheet(`<form data-form="bench-one" data-date="${date}" data-key="${key}" class="stack bench-prompt">
+      <h2>${esc(t.label)}</h2>
+      ${measured != null
+    ? `<p>Temps mesuré : <strong>${fmtDuration(measured)}</strong></p><p class="small muted">Confirme, ou corrige si tu as lâché avant d'appuyer sur ✓.</p>`
+    : `<p class="small muted">${BENCH_HINT[key] || 'Nombre de répétitions propres, sans pause.'}</p>`}
+      <div class="stepper bench-stepper">
+        <div><button type="button" data-bstep="${-step}" aria-label="Moins">−</button><input name="value" type="number" inputmode="numeric" min="0" step="1" value="${value}" aria-label="${esc(t.label)}"><button type="button" data-bstep="${step}" aria-label="Plus">+</button></div>
+        <span class="g-caption">${t.unit}</span>
+      </div>
+      <div class="row-btns">
+        <button type="button" data-action="close-sheet">Plus tard</button>
+        <button class="primary">${measured != null ? 'Confirmer' : 'Valider'}</button>
+      </div>
+    </form>`);
+}
+
 // ---------- Notifications ----------
 async function notify(title, body, tag) {
   if (!state.settings.notifications || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -304,6 +335,12 @@ function renderToday() {
       <p class="tip">💡 ${esc(tipFor('general'))}</p></section>`;
   }
   list.forEach((s) => { html += sessionCard(s); });
+  const abs = absSession(now, state);
+  html += `<details class="card ref-wrap abs-wrap" ${absOpen ? 'open' : ''}>
+      <summary>🔥 Parcours abdos <span class="muted small">· ${abs.duration}, ${abs.home ? 'à la maison' : 'en salle'}</span></summary>
+      <p class="small muted">En plus du programme, quand tu veux : grand droit, obliques, gainage profond et lombaires.</p>
+      ${sessionCard(abs)}
+    </details>`;
   if (!due.due) html += refBlock;
   if (!list.some((s) => s.type === 'escalade' && !s.home)) html += `<section class="card">${climbLogger(today, 'Grimpé hors programme ? Note tes voies et blocs ici.')}</section>`;
   if (!hurting) html += painCard(today);
@@ -387,10 +424,10 @@ function sessionCard(s) {
   const done = state.checks[id] || [];
   const log = logFor(s);
   const hasRun = s.run;
-  return `<section class="card session${s.reference ? ' ref-session' : ''}" style="--accent:${TYPES[s.type].color}">
+  return `<section class="card session${s.reference ? ' ref-session' : ''}${s.bonus ? ' bonus-session' : ''}" style="--accent:${TYPES[s.type].color}">
     <div class="session-head">
-      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
-      <span class="muted">${s.reference ? 'Quand tu veux' : `${slotLabel(s.slot)} · ${s.time}`}</span>
+      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : s.bonus ? '<span class="pill">🔥 Abdos</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
+      <span class="muted">${s.reference || s.bonus ? 'Quand tu veux' : `${slotLabel(s.slot)} · ${s.time}`}</span>
     </div>
     <h2>${esc(s.title)}</h2>
     <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
@@ -398,7 +435,7 @@ function sessionCard(s) {
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
     ${s.reference ? '' : `<p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
-    ${log || s.reference ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
+    ${log || s.reference || s.bonus ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
@@ -464,9 +501,8 @@ function submitLog(form) {
   if (extra) {
     base = { type: fd.get('type'), title: fd.get('title'), date: ymd(new Date()), extra: true };
   } else {
-    const date = parseYmd(form.dataset.date);
-    const s = weekSessions(mondayOf(date), state).find((x) => x.index === Number(form.dataset.index));
-    base = { type: s.type, title: s.title, date: s.date, sessionIndex: s.index, key: s.key, variant: s.variant, home: s.home };
+    const s = findSession(`${form.dataset.date}#${form.dataset.index}`);
+    base = { type: s.type, title: s.title, date: s.date, sessionIndex: s.index, key: s.key, variant: s.variant, home: s.home, bonus: s.bonus };
   }
   const log = {
     ...base,
@@ -621,11 +657,15 @@ function paintGuided() {
   if (!root || !v) return;
   if (v.done) {
     root.dataset.kind = 'done';
+    const ref = guided?.session.reference;
+    const bench = ref && (state.benchmarks || []).find((b) => b.date === guided.session.date);
+    const results = bench ? BENCH_TESTS.filter((t) => bench[t.key]).map((t) => `<li>${esc(t.label)} : <strong>${bench[t.key]} ${UNIT_SHORT[t.unit]}</strong></li>`).join('') : '';
     root.innerHTML = `<div class="g-main g-end">
         <div class="g-kind">Bravo</div>
         <h1 class="g-title">Séance terminée 💪</h1>
-        <p class="g-sub">Note ton ressenti pour que le programme s'adapte.</p>
-        <button class="primary big" data-g="quit">Noter la séance</button>
+        ${ref ? `${results ? `<ul class="g-results">${results}</ul>` : ''}<p class="g-sub">Tes séances sont recalculées avec ces résultats.</p>`
+    : '<p class="g-sub">Note ton ressenti pour que le programme s\'adapte.</p>'}
+        <button class="primary big" data-g="quit">${ref ? 'Voir mes résultats' : 'Noter la séance'}</button>
       </div>`;
     return;
   }
@@ -640,7 +680,9 @@ function paintGuided() {
   $('#g-time').textContent = st.countUp ? fmt(st.dur * 1000 - v.remaining) : over ? `+${fmt(-v.remaining)}` : fmt(v.remaining);
   $('#g-time').classList.toggle('over', over);
   const lift = guidedLiftEx(st);
-  $('#g-hint').textContent = st.countUp ? 'Effort maximal : appuie sur ✓ à la fin et retiens ton résultat.' : st.timed ? ''
+  const timeTest = st.countUp && BENCH_TESTS.find((b) => b.key === guided.session.exercises[st.ex].test)?.unit === 'secondes';
+  $('#g-hint').textContent = timeTest ? 'Le chrono tourne : appuie sur ✓ dès que tu lâches.'
+    : st.countUp ? 'Effort maximal : appuie sur ✓ quand tu t\'arrêtes, puis note ton résultat.' : st.timed ? ''
     : lift ? 'Ajuste ce que tu as fait, puis appuie sur ✓.' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
   paintLift(v);
   const info = st.info ? [].concat(st.info).join(',') : '';
@@ -657,7 +699,7 @@ function renderStats() {
   const now = new Date();
   const month = logs.filter((l) => l.date.slice(0, 7) === ymd(now).slice(0, 7)).length;
   const planned = weekSessions(mondayOf(now), state).filter((s) => s.date <= ymd(now)).length;
-  const doneWeek = logs.filter((l) => !l.extra && ymd(mondayOf(parseYmd(l.date))) === ymd(mondayOf(now))).length;
+  const doneWeek = logs.filter((l) => !l.extra && !l.bonus && ymd(mondayOf(parseYmd(l.date))) === ymd(mondayOf(now))).length;
   const a = state.adapt;
   const pct = (v) => `${Math.round(v * 100)} %`;
   return `<h1>Suivi</h1>
@@ -802,6 +844,11 @@ document.addEventListener('click', async (e) => {
     return;
   }
   if (d.g === 'next') { recordGuidedLift(); return guided.next(); }
+  if (d.bstep) {
+    const input = t.closest('form').querySelector('input[name=value]');
+    input.value = Math.max(0, (Number(input.value) || 0) + Number(d.bstep));
+    return;
+  }
   if (d.lstep) { const [field, dir] = d.lstep.split(':'); return stepLift(field, Number(dir)); }
   if (d.g === 'voice') {
     state.settings.voice = !state.settings.voice;
@@ -932,6 +979,16 @@ document.addEventListener('submit', (e) => {
     if (!done.length) return toast('Séries effacées.');
     const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done });
     return toast(`Séries enregistrées 📒<br>Prochaine fois : ${targetText(next)}${next.reason ? ` (${esc(next.reason)})` : ''}`, 5000);
+  }
+  if (kind === 'bench-one') {
+    const value = Number(fd.get('value'));
+    if (!(value > 0)) return toast('Note un résultat, ou appuie sur « Plus tard ».');
+    const t = BENCH_TESTS.find((b) => b.key === f.dataset.key);
+    recordBench(state, f.dataset.date, t.key, value);
+    $('#sheet').hidden = true;
+    persist();
+    if (view !== 'guided' || guided?.done) render();
+    return toast(`${t.label} : ${value} ${UNIT_SHORT[t.unit]} enregistré 📏`, 2500);
   }
   if (kind === 'pain') {
     const zones = fd.getAll('zone');

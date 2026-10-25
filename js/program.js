@@ -240,6 +240,8 @@ const STRAIN = {
   'goblet-squat': ['genou', 'dos'], presse: ['genou'], 'souleve-roumain': ['dos'], 'souleve-roumain-unilateral': ['dos'],
   'fentes-marchees': ['genou'], 'fentes-bulgares': ['genou'], hollow: ['dos', 'nuque'], superman: ['dos', 'nuque'],
   'course-endurance': ['genou'], 'fractionne-30-30': ['genou'], 'test-cooper': ['genou'],
+  'crunch-inverse': ['dos'], 'russian-twist': ['dos'], 'mountain-climbers': ['poignet', 'epaule'], 'crunch-poulie': ['dos', 'nuque'],
+  'chaise-romaine': ['dos'], 'bucheron-poulie': ['dos', 'epaule'], 'roue-abdos': ['dos', 'epaule'], 'extensions-lombaires': ['dos'],
 };
 export const strainOf = (info) => [...new Set([].concat(info || []).flatMap((i) => STRAIN[i] || []))];
 
@@ -328,7 +330,7 @@ export function buildSession(key, date, state, express = false) {
   });
   const totalSeconds = sessionSeconds(exercises);
   return {
-    key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, notes,
+    key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, notes,
     title: t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
   };
 }
@@ -417,6 +419,18 @@ export function benchSummary(state) {
 
 export function referenceSession(date, state) {
   return { ...buildSession('reference', date, state), index: 'ref', day: null, slot: null, time: '', date: ymd(date) };
+}
+
+// Enregistre un résultat de test (saisi à la fin de chaque test de la séance guidée).
+export function recordBench(state, date, key, value) {
+  const list = state.benchmarks || [];
+  const entry = { ...(list.find((b) => b.date === date) || { date }), [key]: value };
+  state.benchmarks = [...list.filter((b) => b.date !== date), entry].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Parcours abdos, à lancer quand on veut : version salle ou maison selon l'abonnement.
+export function absSession(date, state) {
+  return { ...buildSession('abdos', date, state), index: 'abs', day: null, slot: null, time: '', date: ymd(date) };
 }
 
 const TEMPLATES = {
@@ -638,6 +652,72 @@ const TEMPLATES = {
       { name: 'Footing d\'échauffement', info: 'course-endurance', work: 420, timed: true, note: 'Très facile.' },
       { name: '30/30', info: 'fractionne-30-30', label: '30/30', inner: { work: 30, rest: 30, rounds: 10 }, note: `${fastRun(p)} Pas le temps de sortir ? Remplace par des montées de genoux sur place.` },
       { name: 'Retour au calme', info: 'course-endurance', work: 300, timed: true, note: 'Marche ou footing lent.' },
+    ],
+  },
+
+  // ---------- Parcours abdos : en plus du programme, quand tu veux ----------
+  abdos: {
+    type: 'muscu', title: 'Parcours abdos en salle', bonus: true, restAfter: 60,
+    build: ({ sets, p }) => [
+      WARMUP_GYM(180, 'Chat-vache, bascules du bassin, 10 dead bugs lents.'),
+      {
+        name: 'Bloc 1 : grand droit', info: ['crunch-poulie', 'chaise-romaine', 'hollow'], sets: sets(3), rest: 60,
+        circuit: [
+          { name: 'Crunch à la poulie haute', label: '12 à 15 crunchs à la poulie', work: 45, info: 'crunch-poulie' },
+          { name: 'Relevés de jambes à la chaise romaine', label: '10 à 12 relevés de jambes', work: 40, info: 'chaise-romaine' },
+          { name: 'Gainage creux (hollow)', label: '30 s de gainage creux', work: 30, timed: true, info: 'hollow' },
+        ],
+      },
+      {
+        name: 'Bloc 2 : obliques', info: ['bucheron-poulie', 'pallof', 'gainage-lateral'], sets: sets(3), rest: 60,
+        circuit: [
+          { name: 'Bûcheron à la poulie', label: '12 bûcherons par côté', work: 70, info: 'bucheron-poulie' },
+          { name: 'Pallof press', label: '10 pallof press par côté', work: 60, info: 'pallof' },
+          { name: 'Gainage latéral gauche', label: '30 s de gainage latéral de chaque côté', work: 30, timed: true, info: 'gainage-lateral' },
+          { name: 'Gainage latéral droit', work: 30, timed: true, info: 'gainage-lateral' },
+        ],
+      },
+      {
+        name: 'Bloc 3 : gainage profond et lombaires', info: ['roue-abdos', 'extensions-lombaires', 'planche'], sets: sets(3), rest: 45,
+        circuit: [
+          { name: 'Roue abdominale', label: '8 à 10 roulés à genoux', work: 40, info: 'roue-abdos' },
+          { name: 'Extensions lombaires', label: '12 extensions lombaires au banc', work: 40, info: 'extensions-lombaires' },
+          { name: 'Planche', label: `${Math.min(p.plank, 60)} s de planche`, work: Math.min(p.plank, 60), timed: true, info: 'planche' },
+        ],
+      },
+      { name: 'Étirements', info: 'etirements', work: 180, timed: true, note: 'Cobra doux, posture de l\'enfant, rotation couchée de chaque côté.' },
+    ],
+  },
+  abdosMaison: {
+    type: 'muscu', title: 'Parcours abdos à la maison', home: true, bonus: true, restAfter: 60,
+    build: ({ sets, p }) => [
+      WARMUP_GYM(180, 'Chat-vache, bascules du bassin, 10 dead bugs lents.'),
+      {
+        name: 'Bloc 1 : grand droit', info: ['crunch-inverse', 'releves-genoux', 'hollow'], sets: sets(3), rest: 60,
+        circuit: [
+          { name: 'Crunch inversé', label: '12 à 15 crunchs inversés', work: 40, info: 'crunch-inverse' },
+          { name: 'Relevés de genoux suspendu', label: '8 à 10 relevés de genoux à la barre', work: 35, info: 'releves-genoux' },
+          { name: 'Gainage creux (hollow)', label: '30 s de gainage creux', work: 30, timed: true, info: 'hollow' },
+        ],
+      },
+      {
+        name: 'Bloc 2 : obliques', info: ['russian-twist', 'gainage-lateral'], sets: sets(3), rest: 60,
+        circuit: [
+          { name: 'Russian twist', label: '16 à 20 rotations avec l\'haltère à 4 ou 5 kg', work: 40, info: 'russian-twist' },
+          { name: 'Gainage latéral gauche', label: '30 s de gainage latéral de chaque côté', work: 30, timed: true, info: 'gainage-lateral' },
+          { name: 'Gainage latéral droit', work: 30, timed: true, info: 'gainage-lateral' },
+        ],
+      },
+      {
+        name: 'Bloc 3 : gainage profond et lombaires', info: ['dead-bug', 'planche', 'superman'], sets: sets(3), rest: 45,
+        circuit: [
+          { name: 'Dead bug', label: '10 dead bugs lents', work: 45, info: 'dead-bug' },
+          { name: 'Planche', label: `${Math.min(p.plank, 60)} s de planche`, work: Math.min(p.plank, 60), timed: true, info: 'planche' },
+          { name: 'Superman', label: '12 supermans lents', work: 40, info: 'superman' },
+        ],
+      },
+      { name: 'Finisher : mountain climbers', info: 'mountain-climbers', label: 'Mountain climbers', inner: { work: 30, rest: 30, rounds: sets(4) }, note: 'Rythme soutenu, hanches basses.', restAfter: 30 },
+      { name: 'Étirements', info: 'etirements', work: 180, timed: true, note: 'Cobra doux, posture de l\'enfant, rotation couchée de chaque côté.' },
     ],
   },
 

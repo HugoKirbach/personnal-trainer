@@ -78,7 +78,7 @@ export class GuidedRunner {
     this.session = session;
     this.steps = buildSteps(session);
     this.onTick = onTick;
-    this.opts = opts; // { sound, vibrate, onExerciseDone(i), onFinish(), onSpeak(text)? }
+    this.opts = opts; // { sound, vibrate, onExerciseDone(i, elapsedMs), onFinish(), onSpeak(text)? }
     this.lastWork = {};
     this.steps.forEach((s, i) => { if (s.kind === 'work') this.lastWork[s.ex] = i; });
     this.totalMs = this.steps.reduce((t, s) => t + s.dur * 1000, 0);
@@ -124,9 +124,10 @@ export class GuidedRunner {
   }
 
   // Passe à l'étape i en gardant le temps déjà écoulé au-delà de l'étape précédente.
+  // onExerciseDone reçoit le temps passé sur la dernière série (temps tenu d'un test maximal).
   enter(i, carry = 0) {
     const leaving = this.index;
-    if (i > leaving && this.lastWork[this.steps[leaving].ex] === leaving) this.opts.onExerciseDone(this.steps[leaving].ex);
+    if (i > leaving && this.lastWork[this.steps[leaving].ex] === leaving) this.opts.onExerciseDone(this.steps[leaving].ex, this.stepElapsed() - carry);
     this.index = i;
     this.elapsedBefore = carry;
     if (this.running) this.startedAt = Date.now();
@@ -152,7 +153,7 @@ export class GuidedRunner {
   }
 
   finish() {
-    if (this.lastWork[this.steps[this.index].ex] === this.index) this.opts.onExerciseDone(this.steps[this.index].ex);
+    if (this.lastWork[this.steps[this.index].ex] === this.index) this.opts.onExerciseDone(this.steps[this.index].ex, this.stepElapsed());
     this.done = true;
     this.stop();
     signal('end', this.opts);

@@ -27,6 +27,8 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Carnet de charges : les exercices comptés des séances maison et muscu ont un `lift` (objectif suivant). Les charges sont décrites par `load` (`DB`, `VEST`, `GRIP`, `GYM`) et ne dépassent jamais le matériel. Le gilet et la pince sont recalés par une nouvelle prise de référence. Pas de progression en semaine de décharge.
 - Douleurs (`state.pains`) : une zone signalée retire pendant 7 jours les exercices dont la fiche la sollicite (`STRAIN` dans `program.js`, à compléter pour toute nouvelle fiche qui charge une articulation).
 - Carnet d'escalade (`state.climbs`) : voies et blocs notés en salle, cotation max préremplie dans le ressenti.
+- Parcours abdos (`abdos`, `abdosMaison`, `absSession`, index `abs`) : séance bonus à lancer quand on veut depuis Aujourd'hui, hors répartition hebdo. Pas de crunch classique à la maison (nuque).
+- Tests de la prise de référence : en séance guidée, le ✓ de chaque test ouvre la saisie du résultat (`recordBench`). Pour les tests au temps, le temps tenu jusqu'au ✓ est proposé à confirmer ou corriger.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 
 ## Commandes

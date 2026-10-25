@@ -310,4 +310,11 @@ section.card > .climbs:first-child { border-top: 0; padding-top: 0; margin-top: 
 .climb-row select { margin: 0; }
 .chart .axis.value { fill: var(--text-2); font-weight: 600; }
 
+/* Saisie d'un résultat de test */
+.bench-prompt h2 { padding-right: 52px; }
+.bench-stepper { margin: 6px 0; }
+.bench-stepper input { width: 5em; }
+.g-results { list-style: none; padding: 0; margin: 4px 0; text-align: left; }
+.g-results li { padding: 4px 0; }
+
 [hidden] { display: none !important; }

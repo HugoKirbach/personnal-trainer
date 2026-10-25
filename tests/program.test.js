@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -327,4 +327,35 @@ test('les zones de douleur sont reconnues pour chaque fiche concernée', async (
   ['poutre', 'tractions', 'goblet-squat', 'course-endurance'].forEach((i) => assert.ok(strainOf(i).length, i));
   assert.deepEqual(strainOf(['mobilite', 'etirements-grimpe', 'face-pull']), []);
   strainOf(Object.keys(GUIDES)).forEach((z) => assert.ok(ZONES[z], z));
+});
+
+// ---------- Parcours abdos ----------
+test('le parcours abdos passe en version maison sans abonnement de muscu', () => {
+  const home = absSession(parseYmd('2026-11-11'), homeState());
+  const gym = absSession(parseYmd('2026-11-11'), baseState());
+  assert.ok(home.home && home.bonus && home.index === 'abs');
+  assert.ok(!gym.home && gym.bonus);
+  const names = (s) => s.exercises.flatMap((e) => [e.name, ...(e.circuit || []).map((c) => c.name)]).join(' ');
+  assert.ok(!/poulie|chaise romaine|banc|roue/i.test(names(home)), names(home));
+  assert.match(names(gym), /poulie/);
+  const min = Number(home.duration.match(/\d+/)[0]);
+  assert.ok(min >= 20 && min <= 40, home.duration);
+});
+
+test('le parcours abdos maison ménage la nuque : pas de crunch classique', () => {
+  const s = absSession(parseYmd('2026-11-11'), homeState());
+  const comps = s.exercises.flatMap((e) => e.circuit || [e]);
+  assert.ok(comps.some((c) => c.info === 'crunch-inverse'));
+  assert.ok(!comps.some((c) => /^crunch$/i.test(c.name)));
+});
+
+test('un résultat de test saisi en séance complète la prise de référence du jour', () => {
+  const st = homeState();
+  st.benchmarks = [{ date: '2026-10-25', pullups: 8 }];
+  recordBench(st, '2026-11-22', 'pushups', 30);
+  recordBench(st, '2026-11-22', 'hang', 42);
+  recordBench(st, '2026-11-22', 'hang', 45);
+  assert.deepEqual(st.benchmarks.at(-1), { date: '2026-11-22', pushups: 30, hang: 45 });
+  assert.equal(st.benchmarks.length, 2);
+  assert.equal(latestBench(st).pullups, 8);
 });
