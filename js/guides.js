@@ -167,6 +167,7 @@ export const GUIDES = {
       'Reviens lentement.',
     ],
     errors: ['Charge trop lourde : ce sont de petits muscles, reste très léger.'],
+    tip: 'Sans poulie ni élastique : couché sur le côté, haltère de 2 kg dans la main du dessus, coude collé au flanc.',
   },
   'extensions-doigts': {
     title: 'Extensions des doigts', query: 'extension doigts élastique grimpeur antagoniste',
@@ -579,6 +580,43 @@ Object.assign(GUIDES, {
       'Contracte les fessiers en haut.',
     ],
     errors: ['Remonter au-delà de l\'alignement en cambrant.', 'Aller vite.'],
+  },
+  'menton-rentre': {
+    title: 'Rentrées de menton', query: 'chin tuck exercice nuque posture',
+    steps: [
+      'Debout ou assis, dos et arrière de la tête contre un mur.',
+      'Recule le menton comme pour faire un double menton, sans baisser la tête.',
+      'Tiens 3 secondes, puis relâche doucement.',
+    ],
+    errors: ['Baisser le menton vers la poitrine au lieu de reculer la tête.', 'Forcer : le mouvement est petit.'],
+    tip: 'À refaire au bureau : c\'est l\'antidote à la tête projetée en avant.',
+  },
+  'open-book': {
+    title: 'Livre ouvert (rotation du haut du dos)', query: 'open book stretch rotation thoracique',
+    steps: [
+      'Allongé sur le côté, genoux pliés à 90°, bras tendus devant toi, paumes jointes.',
+      'Ouvre le bras du dessus vers l\'arrière en suivant ta main du regard, genoux collés au sol.',
+      'Expire en ouvrant, puis reviens lentement.',
+    ],
+    errors: ['Décoller les genoux : la rotation doit venir du haut du dos.', 'Forcer pour poser l\'épaule au sol.'],
+  },
+  'wall-angels': {
+    title: 'Anges au mur', query: 'wall angels exercice posture épaules',
+    steps: [
+      'Dos au mur, pieds à 15 cm, bas du dos, haut du dos et arrière de la tête contre le mur.',
+      'Bras en chandelier, coudes et dos des mains contre le mur.',
+      'Monte les bras en glissant le long du mur, puis redescends lentement.',
+    ],
+    errors: ['Cambrer le bas du dos pour garder les bras au mur.', 'Monter trop haut : arrête-toi avant que les mains décollent.'],
+  },
+  'etirement-pectoraux': {
+    title: 'Étirement des pectoraux au cadre de porte', query: 'étirement pectoraux cadre de porte',
+    steps: [
+      'Avant-bras contre le cadre d\'une porte, coude à hauteur d\'épaule.',
+      'Avance doucement le buste jusqu\'à sentir l\'étirement devant l\'épaule, 20 à 30 s par côté.',
+      'Termine à genoux, fesses sur les talons, bras allongés devant toi (posture de l\'enfant), en respirant lentement.',
+    ],
+    errors: ['Tirer sur l\'épaule jusqu\'à la douleur.', 'Cambrer le dos.'],
   },
 });
 

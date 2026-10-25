@@ -27,6 +27,28 @@ try {
   check((await page.textContent(`${PLAN} h2`)).includes('Force grimpe à la maison'), 'sans abonnement : séance maison');
   await shot('0-maison');
 
+  // État de forme : petite forme, séance allégée, puis forme normale.
+  const answer = async (a, b, c) => {
+    for (const o of [a, b, c]) await page.click(`.form-card label:has-text("${o}")`);
+    await page.click('[data-form="form"] button.primary');
+  };
+  check(await page.isVisible('[data-form="form"]'), 'questionnaire de forme proposé');
+  await answer('Mauvais', 'Fatigué', 'Légères');
+  check((await page.textContent('.form-card')).includes('Petite forme'), 'petite forme affichée');
+  check((await page.textContent(PLAN)).includes('une série de moins'), 'séance allégée');
+  await shot('0i-forme');
+  await page.click('[data-form-edit]');
+  await answer('Bon', 'Normale', 'Aucune');
+  check((await page.textContent('.form-card')).includes('Forme normale'), 'forme normale');
+  check(!(await page.textContent(PLAN)).includes('une série de moins'), 'séance prévue rétablie');
+
+  // Routine nuque et dos : courte, notée d'un geste.
+  await page.click('.routine-wrap summary');
+  check((await page.textContent('.routine-wrap h2')).includes('Routine nuque et dos'), 'routine nuque et dos');
+  await shot('0j-routine');
+  await page.click('[data-routine-done]');
+  check((await page.textContent('.routine-wrap summary')).includes('faite'), 'routine notée');
+
   // Version express puis retour à la séance prévue.
   await page.click(`${PLAN} [data-express]`);
   check((await page.textContent(`${PLAN} h2`)).includes('Express'), 'version express');
@@ -85,6 +107,12 @@ try {
   check((await page.textContent('.ex-meta >> nth=0')).includes('de repos avant l\'exercice suivant'), 'repos entre exercices affiché');
   await shot('1-aujourdhui');
 
+  // Créneau : la séance du soir passe au midi, puis revient.
+  await page.click(`${PLAN} [data-slot$="|midi"]`);
+  check((await page.textContent(`${PLAN} .session-head`)).includes('Midi'), 'séance passée au midi');
+  await page.click(`${PLAN} [data-slot$="|soir"]`);
+  check((await page.textContent(`${PLAN} .session-head`)).includes('Soir'), 'séance revenue au soir');
+
   // Carnet d'escalade : un bloc enchaîné, repris dans la cotation max.
   await page.click(`${PLAN} .climbs summary`);
   await page.selectOption(`${PLAN} [data-form="climb"] select[name=grade]`, '6b');
@@ -94,7 +122,7 @@ try {
   await shot('1a-carnet-escalade');
 
   // Prise de référence : saisie des résultats et adaptation.
-  check(await page.isVisible('.ref-wrap[open]'), 'prise de référence proposée');
+  check(await page.isVisible('.bench-wrap[open]'), 'prise de référence proposée');
   await page.fill('[data-form="bench"] input[name=pullups]', '8');
   await page.fill('[data-form="bench"] input[name=hang]', '50');
   await page.fill('[data-form="bench"] input[name=gripper]', '40');
@@ -112,7 +140,7 @@ try {
       await page.click('#g-nextbtn');
     }
   };
-  await page.click('.ref-wrap:not(.abs-wrap) [data-guided]');
+  await page.click('.bench-wrap [data-guided]');
   await page.waitForSelector('.guided');
   await skipTo('Test : pompes');
   await page.click('#g-nextbtn');

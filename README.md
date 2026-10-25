@@ -13,6 +13,8 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 ## Fonctionnalités
 
 - **Aujourd'hui** : la séance du jour, exercices à cocher, chrono en un appui, conseil du jour, puis ressenti (Facile / OK / Dur), course terminée ou non, cotation max, zone douloureuse.
+- **État de forme** : avant la séance, trois questions (sommeil, énergie, courbatures). En petite forme, une série de moins par exercice ; en grande forme, une série bonus sur les deux premiers exercices (jamais sur ce qui charge les doigts, ni en semaine de décharge).
+- **Midi ou soir** : une séance de semaine passe du midi au soir, ou l'inverse, pour ce jour-là (sur la séance ou dans Semaine).
 - **Séance guidée** : un seul chrono pour toute la séance, avec décompte, exercice en cours en grand, exercice suivant, temps restant et annonces vocales (coupables avec 🔊).
 - **Carnet de charges** : répétitions et charge de chaque série (dans la séance guidée ou avec 📒). L'appli propose l'objectif suivant : une répétition de plus, puis +1 kg quand le haut de la fourchette est atteint.
 - **Douleurs** : signale une zone (doigts, coude, épaule, nuque, dos…) et les exercices qui la sollicitent sont retirés pendant 7 jours, jusqu'à « Ça va mieux ».
@@ -24,6 +26,7 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Salle ou maison** : coche dans Réglages tes abonnements (escalade, muscu) et si tu peux courir. Sans abonnement, les séances passent en version maison (barre de traction, haltère, gilet lesté, pompes). Sans course, le cardio se fait sur vélo, rameur ou elliptique en salle, ou en circuit (jumping jacks, shadow boxing, mountain climbers, fentes, burpees) à la maison.
 - **Version express** : un bouton sur la séance du jour la remplace par une séance de 25 min à la maison.
 - **Prise de référence** : toutes les 4 semaines, des tests (pompes, tractions, suspension, pince, planche, squat, course 12 min) recalculent répétitions, charges et allures. En séance guidée, tu notes ton résultat à la fin de chaque test ; pour la suspension et la planche, le chrono tourne jusqu'à ton ✓ et le temps est proposé à confirmer ou corriger.
+- **Routine nuque et dos** : 8 min guidées, idéale les jours sans séance (nuque, haut du dos, épaules, avant-bras). Notée d'un geste, elle ne change pas le volume du programme.
 - **Parcours abdos** : une séance de 25 à 35 min, en salle ou à la maison, à lancer quand tu veux (grand droit, obliques, gainage profond et lombaires).
 - **Programme adaptatif** : cycles de 4 semaines, volume et niveau cible ajustés selon le ressenti.
 

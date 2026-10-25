@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -398,4 +398,65 @@ test('la version express sans course dure entre 20 et 30 minutes', () => {
   assert.equal(s.variant, 'expressCardio');
   const min = Number(s.duration.match(/\d+/)[0]);
   assert.ok(min >= 20 && min <= 30, s.duration);
+});
+
+test('état de forme : petite forme allège, grande forme ajoute une série bonus', () => {
+  const st = { ...baseState(), access: undefined };
+  st.settings.access = { escalade: false, muscu: false };
+  const day = parseYmd('2026-10-26'); // semaine 1, haut du corps à la maison
+  const base = buildSession('haut', day, st);
+  setForm(st, '2026-10-26', { sleep: 0, energy: 1, sore: 1 });
+  assert.equal(formLevel(st, '2026-10-26'), 'low');
+  const low = buildSession('haut', day, st);
+  assert.equal(low.form, 'low');
+  base.exercises.forEach((e, i) => {
+    if (e.sets >= 2 && !e.setLabels) assert.equal(low.exercises[i].sets, e.sets - 1, e.name);
+  });
+  assert.ok(low.totalSeconds < base.totalSeconds);
+  assert.ok(low.notes.some((n) => n.startsWith('Petite forme')));
+  setForm(st, '2026-10-26', { sleep: 2, energy: 2, sore: 2 });
+  const high = buildSession('haut', day, st);
+  const bonus = high.exercises.filter((e, i) => e.sets === base.exercises[i].sets + 1);
+  assert.equal(bonus.length, 2);
+  assert.ok(high.notes.some((n) => n.includes('série bonus')));
+  // Grimpe en salle : pas de série bonus sur ce qui charge les doigts.
+  const gym = { ...baseState() };
+  setForm(gym, '2026-10-28', { sleep: 2, energy: 2, sore: 2 });
+  const bloc = buildSession('bloc', parseYmd('2026-10-28'), gym);
+  const blocBase = buildSession('bloc', parseYmd('2026-10-28'), baseState());
+  assert.deepEqual(bloc.exercises.map((e) => e.sets), blocBase.exercises.map((e) => e.sets));
+  assert.ok(bloc.notes.some((n) => n.includes('projets')));
+  // Semaine de décharge : pas de série bonus.
+  setForm(st, '2026-11-16', { sleep: 2, energy: 2, sore: 2 });
+  const deload = buildSession('haut', parseYmd('2026-11-16'), st);
+  setForm(st, '2026-11-16', { sleep: 1, energy: 1, sore: 2 });
+  assert.equal(formLevel(st, '2026-11-16'), 'normal');
+  const normal = buildSession('haut', parseYmd('2026-11-16'), st);
+  assert.deepEqual(deload.exercises.map((e) => e.sets), normal.exercises.map((e) => e.sets));
+});
+
+test('routine nuque et dos : courte, hors programme, sans effet sur l\'adaptation', () => {
+  const st = baseState();
+  const r = routineSession(parseYmd('2026-10-28'), st);
+  assert.ok(r.mobility && r.bonus && r.index === 'nuque');
+  assert.ok(r.totalSeconds >= 5 * 60 && r.totalSeconds <= 9 * 60, `${r.totalSeconds} s`);
+  assert.ok(r.exercises.some((e) => e.info === 'menton-rentre'));
+  const before = { ...st.adapt };
+  const msgs = adapt(st, { type: 'muscu', feeling: 'facile', mobility: true, completed: true });
+  assert.deepEqual(st.adapt, before);
+  assert.equal(msgs.length, 0);
+});
+
+test('une séance de semaine passe du midi au soir pour ce jour-là seulement', () => {
+  const st = baseState();
+  const monday = parseYmd('2026-10-26');
+  const first = weekSessions(monday, st)[0];
+  assert.equal(first.slot, 'midi');
+  setSlot(st, `${first.date}#0`, 'soir');
+  const moved = weekSessions(monday, st)[0];
+  assert.equal(moved.slot, 'soir');
+  assert.equal(moved.time, '18:00');
+  assert.equal(weekSessions(parseYmd('2026-11-02'), st)[0].slot, 'midi');
+  setSlot(st, `${first.date}#0`, 'midi');
+  assert.deepEqual(st.slots, {});
 });

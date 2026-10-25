@@ -45,6 +45,8 @@ export function mergeStates(local, remote, base = null) {
   });
   out.checks = mergeMap(b.checks, local.checks, remote.checks, preferLocal, 0);
   out.express = mergeMap(b.express, local.express, remote.express, preferLocal, 0);
+  out.forms = mergeMap(b.forms, local.forms, remote.forms, preferLocal, 0);
+  out.slots = mergeMap(b.slots, local.slots, remote.slots, preferLocal, 0);
   out.moves = mergeMap(b.moves, local.moves, remote.moves, preferLocal, 1);
   out.settings = mergeMap(b.settings, local.settings, remote.settings, preferLocal, 1);
   out.adapt = mergeMap(b.adapt, local.adapt, remote.adapt, preferLocal, 0);

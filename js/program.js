@@ -161,10 +161,21 @@ export function weekSessions(monday, state) {
     const day = moves[i] ?? s.day;
     const date = new Date(monday);
     date.setDate(date.getDate() + day);
-    const slot = day >= 5 ? 'weekend' : s.slot;
-    const express = !!state.express?.[`${ymd(date)}#${i}`];
+    const id = `${ymd(date)}#${i}`;
+    const slot = day >= 5 ? 'weekend' : (state.slots?.[id] ?? s.slot);
+    const express = !!state.express?.[id];
     return { ...buildSession(s.key, date, state, express), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
   });
+}
+
+// Passe une séance de semaine du midi au soir (ou l'inverse), pour ce jour-là seulement.
+export function setSlot(state, id, slot) {
+  const [date, i] = id.split('#');
+  const sched = SCHEDULES[state.settings.sessionsPerWeek] || SCHEDULES[4];
+  state.slots = { ...(state.slots || {}) };
+  if (sched[Number(i)]?.slot === slot) delete state.slots[id];
+  else state.slots[id] = slot;
+  return date;
 }
 
 export function sessionsOn(date, state) {
@@ -195,7 +206,8 @@ export function fmtDuration(sec) {
 
 // Durée d'une séance arrondie à 5 min : "50 min" ou "1h05".
 export function durationLabel(sec) {
-  const m = Math.max(5, Math.round(sec / 300) * 5);
+  if (sec < 15 * 60) return `${Math.max(1, Math.round(sec / 60))} min`;
+  const m = Math.round(sec / 300) * 5;
   if (m < 60) return `${m} min`;
   const mm = m % 60;
   return `${Math.floor(m / 60)}h${mm ? String(mm).padStart(2, '0') : ''}`;
@@ -213,7 +225,7 @@ function describe(e) {
   else if (e.countUp) main = 'Effort maximal, une seule fois';
   else if (e.setLabels) main = `${e.sets} ${unit} : ${e.setLabels.join(', ')}`;
   else if (e.inner) main = `${e.sets > 1 ? `${e.sets} séries de ` : ''}${e.inner.rounds} × (${fmtDuration(e.inner.work)} d'effort${e.inner.rest ? ` / ${fmtDuration(e.inner.rest)} de repos` : ''})`;
-  else if (e.reps) main = `${e.sets} × ${e.reps}${e.load?.kg != null ? `, ${e.load.tool} à ${fmtKg(e.load.kg)}` : ''}`;
+  else if (e.reps) main = `${e.sets > 1 ? `${e.sets} × ` : ''}${e.reps}${e.load?.kg != null ? `, ${e.load.tool} à ${fmtKg(e.load.kg)}` : ''}`;
   else if (e.sets > 1) main = `${e.sets} × ${fmtDuration(e.work)}`;
   else main = fmtDuration(e.work);
   const rest = e.sets > 1 && e.rest ? `, repos ${fmtDuration(e.rest)} entre les ${unit}` : '';
@@ -298,6 +310,56 @@ function withoutPain(items, zones) {
   return { kept, removed: [...new Set(removed)] };
 }
 
+// ---------- État de forme du jour ----------
+// Chaque réponse vaut de 0 (mauvais) à 2 (bon).
+export const FORM_QUESTIONS = [
+  { key: 'sleep', label: 'Sommeil', options: ['Mauvais', 'Moyen', 'Bon'] },
+  { key: 'energy', label: 'Énergie', options: ['Fatigué', 'Normale', 'En forme'] },
+  { key: 'sore', label: 'Courbatures', options: ['Fortes', 'Légères', 'Aucune'] },
+];
+export const FORM_LABELS = { low: 'Petite forme', normal: 'Forme normale', high: 'Grande forme' };
+
+export function formLevel(state, dateYmd) {
+  const f = state.forms?.[dateYmd];
+  if (!f) return null;
+  const score = FORM_QUESTIONS.reduce((t, q) => t + (Number(f[q.key]) || 0), 0);
+  return score <= 2 ? 'low' : score >= 6 ? 'high' : 'normal';
+}
+
+export function setForm(state, dateYmd, answers) {
+  state.forms = { ...(state.forms || {}), [dateYmd]: answers };
+}
+
+// Séries comptées qu'on peut retirer ou ajouter sans casser la séance (pas les pyramides ni les tests).
+const adjustable = (e) => (e.sets ?? 1) >= 2 && !e.setLabels && !e.test;
+
+// Petite forme : une série de moins partout, cardio long raccourci. Grande forme : une série bonus
+// sur les deux premiers exercices comptés, sauf en semaine de décharge.
+function applyForm(items, level, { type, home, deload, notes }) {
+  if (level === 'low') {
+    notes.unshift('Petite forme : une série de moins sur chaque exercice. Garde de la marge, la séance compte quand même.');
+    if (type === 'escalade' && !home) notes.unshift('Pas d\'essais au max aujourd\'hui : grimpe propre, sous ta limite.');
+    return items.map((e) => {
+      if (adjustable(e)) return { ...e, sets: e.sets - 1 };
+      if (e.timed && (e.sets ?? 1) === 1 && e.work >= 900) return { ...e, work: Math.round((e.work * 0.75) / 60) * 60 };
+      return e;
+    });
+  }
+  if (level !== 'high') return items;
+  if (deload) {
+    notes.unshift('Grande forme, mais semaine de décharge : garde le plan, tu en profiteras la semaine prochaine.');
+    return items;
+  }
+  // Jamais de série bonus sur ce qui charge les doigts (poulies fragiles).
+  const picks = items.filter((e) => adjustable(e) && e.reps && !e.circuit && !e.inner && !strainOf(e.info).includes('doigts')).slice(0, 2);
+  if (!picks.length) {
+    notes.unshift(type === 'escalade' && !home ? 'Grande forme : bonne journée pour tes projets.' : 'Grande forme : profites-en pour soigner l\'amplitude et le tempo.');
+    return items;
+  }
+  notes.unshift(`Grande forme : une série bonus sur ${picks.map((e) => e.name.toLowerCase()).join(' et ')}, seulement si la technique reste propre.`);
+  return items.map((e) => (picks.includes(e) ? { ...e, sets: e.sets + 1 } : e));
+}
+
 const PAIN_FALLBACK = { name: 'Mobilité douce et étirements', info: 'etirements', work: 900, timed: true, note: 'Bouge sans douleur, amplitude confortable.' };
 
 export function buildSession(key, date, state, express = false) {
@@ -327,8 +389,15 @@ export function buildSession(key, date, state, express = false) {
     if (zones.includes('doigts') && type === 'escalade' && !t.home) notes.unshift('Doigts douloureux : grimpe facile uniquement, sur grosses prises, sans réglettes.');
   }
 
+  const form = formLevel(state, day);
+  if (form && t.reference) {
+    if (form === 'low') notes.unshift('Petite forme : si tu peux, fais les tests un autre jour pour des résultats fiables.');
+  } else if (form && !t.mobility) {
+    items = applyForm(items, form, { type, home: !!t.home, deload: info.phaseIndex === 3, notes });
+  }
+
   // Carnet de charges : à la maison et en muscu, l'objectif suit tes dernières séances.
-  const track = (t.home || type === 'muscu') && !t.reference;
+  const track = (t.home || type === 'muscu') && !t.reference && !t.mobility;
   const exercises = items.map((e, i) => {
     const x = { sets: 1, ...e };
     x.restAfter = i === items.length - 1 ? 0 : (e.restAfter ?? t.restAfter ?? 90);
@@ -341,7 +410,7 @@ export function buildSession(key, date, state, express = false) {
   });
   const totalSeconds = sessionSeconds(exercises);
   return {
-    key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, notes,
+    key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, mobility: !!t.mobility, form, notes,
     title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
   };
 }
@@ -462,6 +531,11 @@ export function recordBench(state, date, key, value) {
 // Parcours abdos, à lancer quand on veut : version salle ou maison selon l'abonnement.
 export function absSession(date, state) {
   return { ...buildSession('abdos', date, state), index: 'abs', day: null, slot: null, time: '', date: ymd(date) };
+}
+
+// Routine nuque et dos, quelques minutes les jours sans séance (ou en plus).
+export function routineSession(date, state) {
+  return { ...buildSession('nuque', date, state), index: 'nuque', day: null, slot: null, time: '', date: ymd(date) };
 }
 
 const TEMPLATES = {
@@ -782,6 +856,29 @@ const TEMPLATES = {
     ],
   },
 
+  // ---------- Routine nuque et dos : prévention, sans compter dans le programme ----------
+  nuque: {
+    type: 'muscu', title: 'Routine nuque et dos', home: true, bonus: true, mobility: true, restAfter: 5,
+    build: () => [
+      {
+        name: 'Mobilité douce de la nuque', info: 'mobilite', label: 'Nuque', inner: { work: 20, rest: 5, rounds: 4 },
+        innerLabels: ['Inclinaison à gauche', 'Inclinaison à droite', 'Rotation douce à gauche', 'Rotation douce à droite'], note: 'Lent, dans une zone sans douleur.',
+      },
+      { name: 'Rentrées de menton', info: 'menton-rentre', reps: '10, tenue 3 s', work: 40, note: 'Dos et tête contre un mur, regard droit devant.' },
+      {
+        name: 'Chat-vache et livre ouvert', info: ['mobilite', 'open-book'], label: 'Dos', inner: { work: 25, rest: 5, rounds: 3 },
+        innerLabels: ['Chat-vache', 'Livre ouvert à gauche', 'Livre ouvert à droite'],
+      },
+      { name: 'Anges au mur', info: 'wall-angels', reps: '10 lents', work: 45, note: 'Bas du dos, nuque et bras collés au mur.' },
+      { name: 'Rotations externes couché sur le côté', info: 'rotations-externes', reps: '12 par bras', work: 60, note: 'Haltère à 2 kg, coude collé au flanc.' },
+      { name: 'Extensions de poignets', info: 'extensions-poignets', reps: '15 par bras', work: 45, note: 'Haltère à 2 ou 3 kg : protège les coudes du grimpeur.' },
+      {
+        name: 'Étirements pectoraux et posture de l\'enfant', info: 'etirement-pectoraux', label: 'Étirements', inner: { work: 25, rest: 5, rounds: 3 },
+        innerLabels: ['Pectoral gauche au cadre de porte', 'Pectoral droit au cadre de porte', 'Posture de l\'enfant, respiration lente'],
+      },
+    ],
+  },
+
   // ---------- Prise de référence : à refaire toutes les 4 semaines ----------
   reference: {
     type: 'muscu', title: 'Prise de référence', home: true, reference: true, restAfter: 180,
@@ -805,6 +902,7 @@ export const TEMPLATE_KEYS = Object.keys(TEMPLATES);
 export function adapt(state, log) {
   const a = state.adapt;
   const msgs = [];
+  if (log.mobility) return msgs; // la routine nuque-dos ne change pas le volume du programme
   const delta = { facile: 0.05, ok: 0, dur: -0.05 }[log.feeling] ?? 0;
   let d = delta;
   if (log.completed === false) d -= 0.07;

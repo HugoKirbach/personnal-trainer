@@ -1,6 +1,7 @@
 import {
-  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary, buildSession, fmtDuration,
-  healPain, mondayOf, parseYmd, recordBench, referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
+  BENCH_TESTS, DAYS, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
+  buildSession, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, tipFor,
+  weekInfo, weekSessions, ymd,
 } from './program.js';
 import {
   load, save, defaults, normalize, onSave,
@@ -25,6 +26,8 @@ let weekOffset = 0;
 let openSession = null; // { date, index } affiché en détail depuis la semaine
 let refOpen = false; // bloc « prise de référence » déplié
 let absOpen = false; // bloc « parcours abdos » déplié
+let routineOpen = false; // bloc « routine nuque et dos » déplié
+let formEdit = false; // questionnaire d'état de forme rouvert pour modification
 let editBench = null; // date des résultats de référence en cours de modification
 let lastClimb = { kind: 'bloc', grade: null }; // dernier type et cotation saisis dans le carnet d'escalade
 let painOpen = false; // formulaire « Signaler une douleur » déplié
@@ -75,6 +78,7 @@ function findSession(id) {
   const [date, idx] = id.split('#');
   if (idx === 'ref') return referenceSession(parseYmd(date), state);
   if (idx === 'abs') return absSession(parseYmd(date), state);
+  if (idx === 'nuque') return routineSession(parseYmd(date), state);
   return weekSessions(mondayOf(parseYmd(date)), state).find((x) => x.index === Number(idx));
 }
 
@@ -84,7 +88,8 @@ function startGuided(id) {
   guidedId = id;
   guidedView = null;
   if (s.reference) refOpen = true;
-  if (s.bonus) absOpen = true;
+  if (s.mobility) routineOpen = true;
+  else if (s.bonus) absOpen = true;
   guided = new GuidedRunner(s, (v) => { guidedView = v; if (view === 'guided') paintGuided(); }, {
     sound: () => state.settings.sound,
     vibrate: () => state.settings.vibrate,
@@ -329,7 +334,7 @@ function renderToday() {
   const hurting = Object.keys(activePains(state, today)).length > 0;
   if (hurting) html += painCard(today);
   const due = benchDue(state, now);
-  const refBlock = `<details class="card ref-wrap" ${due.due || refOpen ? 'open' : ''}>
+  const refBlock = `<details class="card ref-wrap bench-wrap" ${due.due || refOpen ? 'open' : ''}>
       <summary>📏 Prise de référence ${due.due ? '<span class="pill due">À faire</span>' : `<span class="muted small">· prochaine dans ${due.inDays} j</span>`}</summary>
       <p class="small muted">Toutes les 4 semaines : tes résultats recalculent répétitions, charges et allures de tes séances.</p>
       ${sessionCard(referenceSession(now, state))}
@@ -341,7 +346,15 @@ function renderToday() {
       ${next ? `<p class="muted">Prochaine séance : <strong>${esc(next.title)}</strong>, ${parseYmd(next.date).toLocaleDateString('fr-FR', { weekday: 'long' })} à ${next.time}.</p>` : ''}
       <p class="tip">💡 ${esc(tipFor('general'))}</p></section>`;
   }
+  if (list.length) html += formCard(today);
   list.forEach((s) => { html += sessionCard(s); });
+  const routine = routineSession(now, state);
+  const routineLogged = !!logFor(routine);
+  html += `<details class="card ref-wrap routine-wrap" ${routineOpen || (!list.length && !routineLogged) ? 'open' : ''}>
+      <summary>🧘 Routine nuque et dos <span class="muted small">· ${routine.duration}${routineLogged ? ' · ✓ faite' : ''}</span></summary>
+      <p class="small muted">Prévention du grimpeur : nuque, haut du dos, épaules et avant-bras. Idéale les jours sans séance, le matin ou à midi.</p>
+      ${sessionCard(routine)}
+    </details>`;
   const abs = absSession(now, state);
   html += `<details class="card ref-wrap abs-wrap" ${absOpen ? 'open' : ''}>
       <summary>🔥 Parcours abdos <span class="muted small">· ${abs.duration}, ${abs.home ? 'à la maison' : 'en salle'}</span></summary>
@@ -359,6 +372,27 @@ function renderToday() {
       <button class="primary">Enregistrer</button>
     </form></details>`;
   return html;
+}
+
+// ---------- État de forme ----------
+const FORM_EFFECT = { low: 'séance allégée d\'une série par exercice', normal: 'séance prévue, sans changement', high: 'série bonus proposée' };
+
+function formCard(day) {
+  const level = formLevel(state, day);
+  if (level && !formEdit) {
+    return `<section class="card form-card ${level}"><p><i class="form-dot"></i><span><strong>${FORM_LABELS[level]}</strong> aujourd'hui : ${FORM_EFFECT[level]}.</span>
+      <button class="link" data-form-edit="1">Modifier</button></p></section>`;
+  }
+  const cur = state.forms?.[day] || {};
+  return `<section class="card form-card">
+      <h2>Comment tu te sens ?</h2>
+      <p class="small muted">Trois réponses, et ta séance du jour s'ajuste.</p>
+      <form data-form="form" data-date="${day}" class="stack">
+        ${FORM_QUESTIONS.map((q) => `<fieldset class="form-q"><legend>${q.label}</legend><div class="seg">${q.options.map((o, v) => `<label><input type="radio" name="${q.key}" value="${v}" required ${cur[q.key] === v ? 'checked' : ''}><span>${o}</span></label>`).join('')}</div></fieldset>`).join('')}
+        <button class="primary">Adapter ma séance</button>
+        <p class="small muted">Une vraie douleur ? Signale-la plus bas : les exercices concernés seront retirés.</p>
+      </form>
+    </section>`;
 }
 
 // ---------- Douleurs ----------
@@ -431,16 +465,17 @@ function sessionCard(s) {
   const done = state.checks[id] || [];
   const log = logFor(s);
   const hasRun = s.run;
-  return `<section class="card session${s.reference ? ' ref-session' : ''}${s.bonus ? ' bonus-session' : ''}" style="--accent:${TYPES[s.type].color}">
+  return `<section class="card session${s.reference ? ' ref-session' : ''}${s.bonus ? ' bonus-session' : ''}" style="--accent:${s.mobility ? 'var(--rest)' : TYPES[s.type].color}">
     <div class="session-head">
-      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : s.bonus ? '<span class="pill">🔥 Abdos</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
+      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : s.mobility ? '<span class="pill">🧘 Routine</span>' : s.bonus ? '<span class="pill">🔥 Abdos</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference && !s.mobility ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
       <span class="muted">${s.reference || s.bonus ? 'Quand tu veux' : `${slotLabel(s.slot)} · ${s.time}`}</span>
     </div>
     <h2>${esc(s.title)}</h2>
+    ${slotSwitch(s, id, log)}
     <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
-    ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
+    ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : s.mobility ? '' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
-    ${s.reference ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
+    ${s.reference || s.mobility ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
     ${log || s.reference || s.bonus ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
@@ -457,7 +492,7 @@ function sessionCard(s) {
       </li>`).join('')}
     </ol>
     ${s.type === 'escalade' && !s.home && !s.reference ? climbLogger(s.date) : ''}
-    ${s.reference ? benchForm(s.date) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}${log.zones?.length ? `, douleur ${log.zones.map((z) => ZONES[z].toLowerCase()).join(', ')}` : ''}
+    ${s.reference ? benchForm(s.date) : s.mobility ? routineDone(id, log) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}${log.zones?.length ? `, douleur ${log.zones.map((z) => ZONES[z].toLowerCase()).join(', ')}` : ''}
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
         <h3>Comment ça s'est passé ?</h3>
@@ -465,6 +500,18 @@ function sessionCard(s) {
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
+}
+
+// Midi ou soir, pour les séances de semaine pas encore notées.
+function slotSwitch(s, id, log) {
+  if (s.reference || s.bonus || s.slot === 'weekend' || log) return '';
+  const t = state.settings.times;
+  return `<div class="seg slot-seg" role="group" aria-label="Créneau">${['midi', 'soir'].map((k) => `<button type="button" data-slot="${id}|${k}" class="${s.slot === k ? 'active' : ''}">${slotLabel(k)} · ${t[k]}</button>`).join('')}</div>`;
+}
+
+function routineDone(id, log) {
+  if (log) return `<div class="logged">✓ Routine faite <button class="link" data-unlog="${log.id}">Annuler</button></div>`;
+  return `<button class="primary routine-done" data-routine-done="${id}">✓ Routine faite</button>`;
 }
 
 const UNIT_SHORT = { répétitions: 'rép.', secondes: 's', kg: 'kg', mètres: 'm' };
@@ -564,11 +611,11 @@ function renderWeek() {
               <span class="muted small">${slotLabel(s.slot)} ${s.time} · ${s.duration}${log ? ` · ✓ ${feelLabel(log.feeling)}` : ''}</span>
               <label class="small move">Déplacer au <select data-move="${s.index}" data-monday="${ymd(monday)}">
                 ${DAYS.map((n, k) => `<option value="${k}" ${k === d ? 'selected' : ''}>${n.toLowerCase()}</option>`).join('')}
-              </select></label></div>`;
+              </select>${s.slot === 'weekend' ? '' : ` <select data-slotsel="${s.date}#${s.index}" aria-label="Créneau">${['midi', 'soir'].map((k) => `<option value="${k}" ${s.slot === k ? 'selected' : ''}>${k === 'midi' ? 'le midi' : 'le soir'}</option>`).join('')}</select>`}</label></div>`;
           }).join('') : '<span class="muted small">Repos</span>'}</div></li>`;
       }).join('')}
     </ul>
-    <p class="hint">Un déplacement ne concerne que cette semaine. Évite deux séances d'escalade deux jours de suite pour tes doigts.</p>`;
+    <p class="hint">Un déplacement ou un changement de créneau ne concerne que cette semaine. Évite deux séances d'escalade deux jours de suite pour tes doigts.</p>`;
 }
 
 // ---------- Chrono ----------
@@ -703,8 +750,11 @@ function paintGuided() {
 // ---------- Suivi ----------
 function renderStats() {
   const logs = state.logs;
+  const training = logs.filter((l) => !l.mobility);
   const now = new Date();
-  const month = logs.filter((l) => l.date.slice(0, 7) === ymd(now).slice(0, 7)).length;
+  const week = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+  const routines = logs.filter((l) => l.mobility && l.date >= ymd(week)).length;
+  const month = training.filter((l) => l.date.slice(0, 7) === ymd(now).slice(0, 7)).length;
   const planned = weekSessions(mondayOf(now), state).filter((s) => s.date <= ymd(now)).length;
   const doneWeek = logs.filter((l) => !l.extra && !l.bonus && ymd(mondayOf(parseYmd(l.date))) === ymd(mondayOf(now))).length;
   const a = state.adapt;
@@ -715,8 +765,9 @@ function renderStats() {
       <div class="tile"><span class="big-num">${doneWeek}/${planned || 0}</span><span>prévues réalisées cette semaine</span></div>
       <div class="tile"><span class="big-num">${GRADES[a.gradeIdx]}</span><span>niveau cible escalade</span></div>
     </div>
-    <section class="card"><h2>Séances par semaine</h2>${weeklyBars(logs)}</section>
-    <section class="card"><h2>Ressenti</h2>${feelingDots(logs)}</section>
+    ${logs.some((l) => l.mobility) ? `<p class="small muted center">🧘 Routine nuque et dos : ${routines} fois ces 7 derniers jours.</p>` : ''}
+    <section class="card"><h2>Séances par semaine</h2>${weeklyBars(training)}</section>
+    <section class="card"><h2>Ressenti</h2>${feelingDots(training)}</section>
     <section class="card"><h2>Escalade</h2>${climbStats()}</section>
     <section class="card"><h2>Carnet de charges</h2>${liftTable()}</section>
     <section class="card"><h2>Intensité du programme</h2>
@@ -991,6 +1042,21 @@ document.addEventListener('click', async (e) => {
     persist(); return render();
   }
   if (d.lift) { const [id, i] = d.lift.split('|'); return openLiftSheet(id, Number(i)); }
+  if (d.formEdit) { formEdit = true; return render(); }
+  if (d.slot) {
+    const [id, slot] = d.slot.split('|');
+    setSlot(state, id, slot);
+    persist(); render();
+    return toast(`Séance passée ${slot === 'midi' ? 'au midi' : 'au soir'} (${state.settings.times[slot]}), pour ce jour-là.`, 2500);
+  }
+  if (d.routineDone) {
+    const r = findSession(d.routineDone);
+    state.logs.push({ id: `${Date.now()}`, type: r.type, title: r.title, date: r.date, sessionIndex: r.index, key: r.key, variant: r.variant, home: true, bonus: true, mobility: true, feeling: 'ok', completed: true, zones: [], note: '' });
+    state.logs.sort((a, b) => a.date.localeCompare(b.date));
+    routineOpen = false;
+    persist(); render();
+    return toast('Routine notée 🧘 Ta nuque te remercie.', 2500);
+  }
   if (d.heal) {
     healPain(state, d.heal, ymd(new Date()));
     persist(); render();
@@ -1070,6 +1136,10 @@ document.addEventListener('change', (e) => {
     t.closest('li').classList.toggle('done', t.checked);
     return save(state);
   }
+  if (t.dataset.slotsel) {
+    setSlot(state, t.dataset.slotsel, t.value);
+    persist(); return render();
+  }
   if (t.dataset.move) {
     const wk = (state.moves[t.dataset.monday] ||= {});
     wk[t.dataset.move] = Number(t.value);
@@ -1093,6 +1163,13 @@ document.addEventListener('submit', (e) => {
   const fd = new FormData(f);
   const kind = f.dataset.form;
   if (kind === 'log' || kind === 'extra') return submitLog(f);
+  if (kind === 'form') {
+    setForm(state, f.dataset.date, Object.fromEntries(FORM_QUESTIONS.map((q) => [q.key, Number(fd.get(q.key))])));
+    formEdit = false;
+    persist(); render();
+    const level = formLevel(state, f.dataset.date);
+    return toast(`${FORM_LABELS[level]} : ${FORM_EFFECT[level]}.`, 3000);
+  }
   if (kind === 'lift') {
     const s = findSession(f.dataset.id);
     const i = Number(f.dataset.ex);

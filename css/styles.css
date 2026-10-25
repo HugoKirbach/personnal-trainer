@@ -326,3 +326,19 @@ section.card > .climbs:first-child { border-top: 0; padding-top: 0; margin-top: 
 .backup-list button { min-height: 40px; padding: 6px 12px; }
 
 [hidden] { display: none !important; }
+
+/* État de forme du jour */
+.form-card h2 { margin-bottom: 2px; }
+.form-q { border: 0; padding: 0; margin: 0; }
+.form-q legend { font-size: .85rem; color: var(--text-2); margin-bottom: 4px; }
+.form-card > p { margin: 0; display: flex; align-items: center; gap: 8px; }
+.form-card > p > span { flex: 1; }
+.form-q + .form-q { margin-top: 4px; }
+.form-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.form-card.low .form-dot { background: var(--work); }
+.form-card.normal .form-dot { background: var(--primary); }
+.form-card.high .form-dot { background: var(--rest); }
+.routine-done { width: 100%; margin-top: 8px; }
+.slot-seg { margin: 4px 0 8px; }
+.slot-seg button { font-size: .85rem; padding: 6px 8px; }
+.move select + select { margin-left: 4px; }

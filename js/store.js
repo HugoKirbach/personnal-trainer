@@ -26,6 +26,8 @@ export function defaults() {
     lifts: {},
     pains: [],
     climbs: [],
+    forms: {},
+    slots: {},
     updatedAt: 0,
   };
 }
