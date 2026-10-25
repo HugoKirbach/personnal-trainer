@@ -116,6 +116,18 @@ try {
   check((await page.textContent('.abs-wrap h2')).includes('Parcours abdos à la maison'), 'parcours abdos maison');
   await shot('0g-abdos');
 
+  // Parcours détente : zones de courbatures proposées puis cochées, noté d'un geste.
+  check((await page.$$eval('#main > *', (els) => els.map((e) => e.className))).indexOf('card meal-card') === 1, 'idée repas juste sous la date');
+  await page.click('.relax-wrap summary');
+  check((await page.textContent('.relax-wrap h2')).includes('Parcours détente'), 'parcours détente');
+  const relaxBefore = await page.textContent('.relax-wrap summary');
+  await page.click('.relax-wrap label:has(input[data-sore="mollets"])');
+  check((await page.textContent('.relax-wrap')).includes('Étirement des mollets au mur'), 'étirements de la zone cochée');
+  check((await page.textContent('.relax-wrap summary')) !== relaxBefore, 'durée recalculée');
+  await shot('0i-detente');
+  await page.click('.relax-wrap [data-routine-done]');
+  check((await page.textContent('.relax-wrap summary')).includes('fait'), 'parcours détente noté');
+
   // Active les accès en salle.
   await page.click('.top-settings');
   await page.check('input[name=accessEscalade]');

@@ -646,3 +646,31 @@ test('objectifs voie et bloc : le plan suit le plus proche puis repart vers le s
   assert.equal(seasonPlans(st).length, 1);
   assert.equal(seasonPlans(st)[0].goals.length, 2);
 });
+
+test('parcours détente : zones proposées selon les dernières séances, puis choisies', async () => {
+  const { detenteSession, suggestSore, soreZones, setSore, SORE_ZONES } = await import('../js/program.js');
+  const st = baseState();
+  assert.deepEqual(suggestSore(st, '2026-10-28'), ['nuque', 'dos', 'hanches'], 'sans séance récente : nuque, dos et hanches');
+  st.logs.push({ date: '2026-10-26', type: 'escalade', key: 'bloc' }, { date: '2026-10-27', type: 'muscu', key: 'bas', variant: 'basMaison' });
+  st.logs.push({ date: '2026-10-20', type: 'muscu', key: 'haut' }, { date: '2026-10-27', type: 'muscu', key: 'nuque', mobility: true });
+  assert.deepEqual(suggestSore(st, '2026-10-28'), ['epaules', 'avantbras', 'dos', 'hanches', 'cuisses', 'mollets'], 'escalade et bas du corps des 2 derniers jours, sans les routines');
+  setSore(st, '2026-10-28', ['mollets', 'nuque', 'inconnu']);
+  assert.deepEqual(soreZones(st, '2026-10-28'), ['nuque', 'mollets'], 'zones choisies, dans l\'ordre du corps');
+  const s = detenteSession(parseYmd('2026-10-28'), st);
+  assert.ok(s.mobility && s.bonus && s.key === 'detente');
+  assert.equal(s.exercises[0].name, 'Mise en route');
+  assert.equal(s.exercises.at(-1).name, 'Respiration lente au sol');
+  assert.ok(s.exercises.some((e) => e.name.includes('trapèze')) && s.exercises.some((e) => e.name.includes('mollets')));
+  assert.ok(!s.exercises.some((e) => e.name.includes('quadriceps')), 'pas de zone non cochée');
+  assert.ok(s.exercises.every((e) => !e.lift), 'pas de carnet de charges');
+  // Chaque zone a ses étirements, et une séance par zone reste courte.
+  Object.keys(SORE_ZONES).forEach((z) => {
+    setSore(st, '2026-10-29', [z]);
+    const one = detenteSession(parseYmd('2026-10-29'), st);
+    assert.ok(one.exercises.length >= 4 && one.totalSeconds <= 9 * 60, `${z} : ${one.totalSeconds} s`);
+  });
+  // Noter le parcours ne change pas le programme.
+  const before = JSON.stringify(st.adapt);
+  adapt(st, { type: 'muscu', key: 'detente', mobility: true, feeling: 'facile', completed: true });
+  assert.equal(JSON.stringify(st.adapt), before);
+});

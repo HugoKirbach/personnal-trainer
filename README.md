@@ -34,6 +34,7 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Prise de référence** : toutes les 4 semaines, des tests (pompes, tractions, suspension, pince, planche, squat, course 12 min) recalculent répétitions, charges et allures. En séance guidée, tu notes ton résultat à la fin de chaque test ; pour la suspension et la planche, le chrono tourne jusqu'à ton ✓ et le temps est proposé à confirmer ou corriger.
 - **Routine nuque et dos** : 8 min guidées, idéale les jours sans séance (nuque, haut du dos, épaules, avant-bras). Notée d'un geste, elle ne change pas le volume du programme.
 - **Parcours abdos** : une séance de 25 à 35 min, en salle ou à la maison, à lancer quand tu veux (grand droit, obliques, gainage profond et lombaires).
+- **Parcours détente** : étirements doux, mobilité et respiration pour récupérer, selon les zones où tu as des courbatures (proposées d'après tes dernières séances, à cocher), en séance guidée.
 - **Programme adaptatif** : cycles de 4 semaines, volume et niveau cible ajustés selon le ressenti.
 - **Objectifs de saison** : fixe dans Réglages une cotation en voie (7a, par exemple) et un niveau en bloc (Rouge dans ta salle), chacun avec sa date. Les cycles s'enchaînent en blocs base, force, force-endurance et performance, puis deux semaines d'affûtage avant l'objectif le plus proche, et repartent vers le suivant. Les séances changent selon le bloc (4 × 4, voie projet, suspensions répétées…) et Suivi montre la frise des blocs et, pour chaque objectif, si tu es en avance ou en retard.
 

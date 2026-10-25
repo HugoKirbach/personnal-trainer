@@ -387,6 +387,7 @@ function describe(e) {
   if (e.circuit) main = `${e.sets} tour${e.sets > 1 ? 's' : ''} : ${e.circuit.filter((c) => c.label).map((c) => c.label).join(', ')}`;
   else if (e.countUp) main = 'Effort maximal, une seule fois';
   else if (e.setLabels) main = `${e.sets} ${unit} : ${e.setLabels.join(', ')}`;
+  else if (e.inner && e.hold) main = `${fmtDuration(e.inner.work)} de chaque côté`;
   else if (e.inner) main = `${e.sets > 1 ? `${e.sets} séries de ` : ''}${e.inner.rounds} × (${fmtDuration(e.inner.work)} d'effort${e.inner.rest ? ` / ${fmtDuration(e.inner.rest)} de repos` : ''})`;
   else if (e.reps) main = `${e.sets > 1 ? `${e.sets} × ` : ''}${e.reps}${e.load?.kg != null ? `, ${e.load.tool} à ${fmtKg(e.load.kg)}` : ''}`;
   else if (e.sets > 1) main = `${e.sets} × ${fmtDuration(e.work)}`;
@@ -740,7 +741,7 @@ export function buildSession(key, date, state, express = false, minutes = null) 
   const bench = latestBench(state);
   const p = prescriptions(bench);
   const runs = state.settings.access?.course !== false;
-  const ctx = { f, info, p, g: a.gradeIdx, lv: (i) => withLevels(state.settings, grade(i)), run: runs, block: block?.phase ?? null, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
+  const ctx = { f, info, p, sore: () => soreZones(state, ymd(date)), g: a.gradeIdx, lv: (i) => withLevels(state.settings, grade(i)), run: runs, block: block?.phase ?? null, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
   if (block?.goalWeek && type === 'escalade' && !t.reference) notes.unshift(`Semaine objectif : tu es frais, c'est le moment de tenter ${block.goals.map((g) => `ton ${goalLabel(g)}`).join(' et ')} !`);
@@ -911,6 +912,87 @@ export function absSession(date, state) {
 // Routine nuque et dos, quelques minutes les jours sans séance (ou en plus).
 export function routineSession(date, state) {
   return { ...buildSession('nuque', date, state), index: 'nuque', day: null, slot: null, time: '', date: ymd(date) };
+}
+
+// ---------- Parcours détente : étirements doux, mobilité et respiration selon les courbatures ----------
+export const SORE_ZONES = {
+  nuque: 'Nuque', epaules: 'Épaules', avantbras: 'Avant-bras et doigts', pectoraux: 'Pectoraux et bras', dos: 'Haut du dos',
+  lombaires: 'Bas du dos', abdos: 'Abdos', hanches: 'Hanches et fessiers', cuisses: 'Cuisses', mollets: 'Mollets',
+};
+const sides = (name, info, a, b, work = 30, note) => ({ name, info, label: name, hold: true, inner: { work, rest: 5, rounds: 2 }, innerLabels: [a, b], note });
+const RELAX = {
+  nuque: [
+    sides('Étirement doux du trapèze', 'etirement-trapeze', 'Oreille vers l\'épaule droite', 'Oreille vers l\'épaule gauche', 30, 'Laisse le poids de la tête faire le travail, sans tirer avec la main.'),
+    { name: 'Rentrées de menton', info: 'menton-rentre', reps: '8, tenue 3 s', work: 35, note: 'Allongé sur le dos, tête posée au sol : le cou se relâche.' },
+  ],
+  epaules: [
+    sides('Étirement de l\'épaule bras croisé', 'etirement-epaule', 'Bras gauche croisé', 'Bras droit croisé'),
+    sides('Étirement du triceps', 'etirement-triceps', 'Coude gauche au-dessus de la tête', 'Coude droit au-dessus de la tête', 25),
+    { name: 'Passages d\'épaules avec une serviette', info: 'passages-epaules', reps: '8 lents', work: 40, note: 'Mains très écartées, sans forcer.' },
+  ],
+  avantbras: [
+    sides('Étirement des fléchisseurs', 'etirement-avant-bras', 'Avant-bras gauche, paume vers l\'avant', 'Avant-bras droit, paume vers l\'avant'),
+    sides('Étirement des extenseurs', 'etirement-avant-bras', 'Avant-bras gauche, dos de la main', 'Avant-bras droit, dos de la main', 25),
+    { name: 'Glissements des tendons', info: 'glissements-tendons', reps: '5 enchaînements lents par main', work: 45, note: 'Sans charge : fait circuler le sang dans les doigts.' },
+  ],
+  pectoraux: [
+    sides('Étirement des pectoraux au cadre de porte', 'etirement-pectoraux', 'Pectoral gauche', 'Pectoral droit'),
+    sides('Étirement des biceps au mur', 'etirement-biceps', 'Biceps gauche', 'Biceps droit', 25),
+  ],
+  dos: [
+    sides('Posture de l\'enfant, bras sur le côté', 'etirement-dorsaux', 'Mains vers la droite', 'Mains vers la gauche', 30, 'Étire le grand dorsal du côté opposé aux mains.'),
+    sides('Livre ouvert', 'open-book', 'Couché sur le côté gauche', 'Couché sur le côté droit'),
+    { name: 'Chat-vache', info: 'mobilite', reps: '8 lents', work: 40 },
+  ],
+  lombaires: [
+    { name: 'Genoux poitrine', info: 'genoux-poitrine', work: 45, timed: true, note: 'Bascule doucement de droite à gauche pour masser le bas du dos.' },
+    sides('Rotation couchée', 'rotation-couchee', 'Genoux vers la gauche', 'Genoux vers la droite', 40),
+    { name: 'Posture de l\'enfant', info: 'etirement-dorsaux', work: 45, timed: true, note: 'Front au sol, respire dans le bas du dos.' },
+  ],
+  abdos: [
+    { name: 'Cobra doux', info: 'cobra', work: 30, timed: true, note: 'Sur les avant-bras (sphinx) si le bas du dos tire.' },
+    sides('Étirement latéral debout', 'etirement-lateral', 'Bras droit vers la gauche', 'Bras gauche vers la droite', 25),
+  ],
+  hanches: [
+    sides('Fente basse (psoas)', 'fente-basse', 'Genou gauche au sol', 'Genou droit au sol', 35),
+    sides('Étirement du fessier couché', 'etirement-fessier', 'Cheville droite sur le genou gauche', 'Cheville gauche sur le genou droit', 35),
+    { name: 'Papillon', info: 'papillon', work: 40, timed: true, note: 'Dos droit, laisse les genoux descendre tout seuls.' },
+  ],
+  cuisses: [
+    sides('Étirement des quadriceps', 'etirement-quadriceps', 'Talon gauche vers la fesse', 'Talon droit vers la fesse'),
+    sides('Étirement des ischios', 'etirement-ischios', 'Jambe gauche tendue', 'Jambe droite tendue', 35),
+  ],
+  mollets: [
+    sides('Étirement des mollets au mur', 'etirement-mollets', 'Jambe gauche tendue derrière', 'Jambe droite tendue derrière'),
+    sides('Mollet genou fléchi', 'etirement-mollets', 'Jambe gauche', 'Jambe droite', 25),
+    { name: 'Chien tête en bas en pédalant', info: 'chien-tete-bas', work: 40, timed: true, note: 'Plie un genou puis l\'autre, talons qui cherchent le sol.' },
+  ],
+};
+// Zones sollicitées par une séance notée : escalade, haut ou bas du corps, abdos, course.
+function zonesOfLog(l) {
+  const k = l.variant || l.key || '';
+  if (l.type === 'escalade') return ['avantbras', 'epaules', 'dos'];
+  if (l.type === 'cardio') return ['mollets', 'cuisses', 'hanches'];
+  if (/^abdos/.test(k)) return ['abdos', 'lombaires'];
+  if (/^bas/.test(k)) return ['cuisses', 'hanches', 'mollets'];
+  if (/^haut/.test(k)) return ['pectoraux', 'epaules', 'dos'];
+  return ['pectoraux', 'dos', 'cuisses'];
+}
+// Courbatures probables : zones des séances des deux derniers jours (et du jour), sinon nuque, dos et hanches.
+export function suggestSore(state, day) {
+  const from = addDays(parseYmd(day), -2);
+  const zones = new Set((state.logs || []).filter((l) => !l.mobility && l.date >= from && l.date <= day).flatMap(zonesOfLog));
+  return zones.size ? Object.keys(SORE_ZONES).filter((z) => zones.has(z)) : ['nuque', 'dos', 'hanches'];
+}
+// Zones du jour : choisies (state.recovery[date]), sinon proposées.
+export function soreZones(state, day) {
+  return state.recovery?.[day] || suggestSore(state, day);
+}
+export function setSore(state, day, zones) {
+  state.recovery = { ...state.recovery, [day]: Object.keys(SORE_ZONES).filter((z) => zones.includes(z)) };
+}
+export function detenteSession(date, state) {
+  return { ...buildSession('detente', date, state), index: 'detente', day: null, slot: null, time: '', date: ymd(date) };
 }
 
 const TEMPLATES = {
@@ -1269,6 +1351,16 @@ const TEMPLATES = {
         name: 'Étirements pectoraux et posture de l\'enfant', info: 'etirement-pectoraux', label: 'Étirements', inner: { work: 25, rest: 5, rounds: 3 },
         innerLabels: ['Pectoral gauche au cadre de porte', 'Pectoral droit au cadre de porte', 'Posture de l\'enfant, respiration lente'],
       },
+    ],
+  },
+
+  // ---------- Parcours détente : hors programme, selon les zones de courbatures ----------
+  detente: {
+    type: 'muscu', title: 'Parcours détente', home: true, bonus: true, mobility: true, restAfter: 10,
+    build: ({ sore }) => [
+      { name: 'Mise en route', info: 'respiration', work: 90, timed: true, note: 'Marche tranquille dans la pièce, épaules relâchées, respiration par le nez.' },
+      ...sore().flatMap((z) => RELAX[z] || []),
+      { name: 'Respiration lente au sol', info: 'respiration', work: 180, timed: true, note: 'Allongé, genoux fléchis : inspire 5 s par le nez, expire 5 s. Laisse le corps peser dans le sol.' },
     ],
   },
 

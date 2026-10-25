@@ -32,6 +32,7 @@ export function defaults() {
     projects: [],
     food: { favorites: {}, servings: {} },
     forms: {},
+    recovery: {},
     slots: {},
     swaps: {},
     durations: {},

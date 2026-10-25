@@ -287,6 +287,7 @@ fieldset.zones legend { font-size: .9rem; color: var(--text-2); padding: 0; marg
 }
 .chip-check input:checked + span { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
 .chip-check input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+.relax-wrap .chip-check input:checked + span { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .pain-card.active { border-left: 4px solid var(--danger); }
 .pain-card > summary + form { margin-top: 12px; }
 .pain-list { list-style: none; padding: 0; margin: 8px 0; }

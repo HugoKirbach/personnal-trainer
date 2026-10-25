@@ -618,6 +618,190 @@ Object.assign(GUIDES, {
     ],
     errors: ['Tirer sur l\'épaule jusqu\'à la douleur.', 'Cambrer le dos.'],
   },
+  // Parcours détente : étirements doux, mobilité et respiration.
+  respiration: {
+    title: 'Respiration lente', query: 'respiration cohérence cardiaque allongé relaxation',
+    steps: [
+      'Allongé sur le dos, genoux fléchis, une main sur le ventre.',
+      'Inspire 5 secondes par le nez en gonflant le ventre, puis expire 5 secondes par la bouche.',
+      'À chaque expiration, relâche un peu plus les épaules, la mâchoire et les mains.',
+    ],
+    errors: ['Gonfler la poitrine au lieu du ventre.', 'Forcer le rythme : s\'il te gêne, raccourcis à 4 secondes.'],
+    tip: 'Ce rythme calme le système nerveux et aide la récupération, le soir avant de dormir aussi.',
+  },
+  'etirement-trapeze': {
+    title: 'Étirement doux du trapèze', query: 'étirement trapèze nuque doux',
+    steps: [
+      'Assis, dos droit, épaules basses. Tiens le bord de la chaise d\'une main pour garder l\'épaule en bas.',
+      'Incline lentement l\'oreille opposée vers l\'épaule, regard droit devant.',
+      'Laisse le poids de la tête étirer, respire, puis remonte doucement.',
+    ],
+    errors: ['Tirer la tête avec la main : avec une nuque fragile, le poids de la tête suffit.', 'Hausser l\'épaule du côté étiré.'],
+  },
+  'etirement-epaule': {
+    title: 'Étirement de l\'épaule bras croisé', query: 'étirement épaule bras croisé deltoïde',
+    steps: [
+      'Debout, passe un bras tendu devant la poitrine.',
+      'Avec l\'autre avant-bras, rapproche-le doucement de toi, au-dessus du coude.',
+      'Garde l\'épaule étirée basse, loin de l\'oreille.',
+    ],
+    errors: ['Appuyer sur le coude lui-même.', 'Tourner le buste pour gagner de l\'amplitude.'],
+  },
+  'etirement-triceps': {
+    title: 'Étirement du triceps', query: 'étirement triceps coude au-dessus de la tête',
+    steps: [
+      'Lève un bras, plie le coude et laisse la main descendre entre les omoplates.',
+      'Avec l\'autre main, pousse doucement le coude vers l\'arrière.',
+      'Garde le dos droit, sans cambrer.',
+    ],
+    errors: ['Pencher la tête en avant.', 'Forcer si l\'épaule pince.'],
+  },
+  'passages-epaules': {
+    title: 'Passages d\'épaules avec une serviette', query: 'shoulder dislocates serviette mobilité épaules',
+    steps: [
+      'Tiens une serviette ou une ceinture tendue, mains très écartées, bras tendus devant toi.',
+      'Monte les bras au-dessus de la tête puis passe-les derrière toi, lentement, sans plier les coudes.',
+      'Reviens par le même chemin. Rapproche les mains seulement si c\'est facile.',
+    ],
+    errors: ['Mains trop proches : l\'épaule force.', 'Cambrer le bas du dos pour passer.'],
+  },
+  'etirement-avant-bras': {
+    title: 'Étirement des avant-bras', query: 'étirement avant-bras fléchisseurs extenseurs grimpeur',
+    steps: [
+      'Fléchisseurs : bras tendu devant toi, paume vers l\'avant, doigts vers le bas. Ramène doucement les doigts vers toi avec l\'autre main.',
+      'Extenseurs : bras tendu, dos de la main vers l\'avant, poing souple. Ramène doucement la main vers toi.',
+      'Coude tendu sans le verrouiller, 25 à 30 secondes par position.',
+    ],
+    errors: ['Tirer sur les doigts un par un : ta poulie a déjà été touchée.', 'Étirer jusqu\'à la douleur.'],
+    tip: 'Après une séance de doigts, attends quelques heures avant d\'étirer fort : le jour même, reste très doux.',
+  },
+  'glissements-tendons': {
+    title: 'Glissements des tendons des doigts', query: 'tendon gliding exercices doigts',
+    steps: [
+      'Main ouverte, doigts tendus et serrés.',
+      'Enchaîne lentement : crochet (doigts pliés aux deux dernières phalanges), poing fermé, puis table (doigts tendus, pliés à la base).',
+      'Reviens main ouverte entre chaque position. 5 enchaînements par main.',
+    ],
+    errors: ['Serrer fort : aucune force, juste le mouvement.', 'Aller vite.'],
+    tip: 'Idéal le lendemain d\'une séance d\'escalade pour des doigts raides.',
+  },
+  'etirement-biceps': {
+    title: 'Étirement des biceps au mur', query: 'étirement biceps mur',
+    steps: [
+      'Main à plat contre un mur à hauteur d\'épaule, doigts vers l\'arrière, bras tendu.',
+      'Tourne lentement le buste à l\'opposé du mur jusqu\'à sentir l\'avant du bras s\'étirer.',
+      'Garde l\'épaule basse.',
+    ],
+    errors: ['Verrouiller le coude en force.', 'Tourner trop vite.'],
+  },
+  'etirement-dorsaux': {
+    title: 'Posture de l\'enfant et dorsaux', query: 'posture de l\'enfant étirement grand dorsal côté',
+    steps: [
+      'À genoux, fesses vers les talons, front au sol, bras allongés devant toi.',
+      'Pour les dorsaux : marche avec les mains vers un côté, l\'étirement se fait sur le flanc opposé.',
+      'Respire lentement dans le dos, 30 secondes par côté.',
+    ],
+    errors: ['Décoller les fesses des talons.', 'Bloquer la respiration.'],
+  },
+  'genoux-poitrine': {
+    title: 'Genoux poitrine', query: 'genoux poitrine étirement bas du dos',
+    steps: [
+      'Allongé sur le dos, ramène les deux genoux vers la poitrine, mains sur les tibias.',
+      'Relâche les épaules et la tête au sol.',
+      'Bascule doucement de droite à gauche pour masser le bas du dos.',
+    ],
+    errors: ['Décoller la tête.', 'Tirer fort sur les genoux.'],
+  },
+  'rotation-couchee': {
+    title: 'Rotation couchée', query: 'rotation couchée étirement dos torsion allongé',
+    steps: [
+      'Allongé sur le dos, bras en croix, genoux pliés.',
+      'Laisse tomber les deux genoux d\'un côté, tête tournée de l\'autre si la nuque est à l\'aise.',
+      'Les deux épaules restent au sol. Respire et laisse le bas du dos se relâcher.',
+    ],
+    errors: ['Forcer les genoux vers le sol.', 'Tourner la tête si la nuque tire : garde-la au centre.'],
+  },
+  cobra: {
+    title: 'Cobra doux', query: 'cobra sphinx étirement abdominaux doux',
+    steps: [
+      'Allongé sur le ventre, mains sous les épaules, coudes près du corps.',
+      'Pousse doucement pour lever le buste, bassin au sol, épaules basses.',
+      'Version sphinx : reste sur les avant-bras si le bas du dos tire.',
+    ],
+    errors: ['Tendre les bras en force et écraser le bas du dos.', 'Lever le menton et casser la nuque : regarde devant toi, au sol.'],
+  },
+  'etirement-lateral': {
+    title: 'Étirement latéral debout', query: 'étirement latéral debout obliques',
+    steps: [
+      'Debout, pieds largeur de hanches, un bras tendu au-dessus de la tête.',
+      'Penche-toi lentement du côté opposé, comme entre deux vitres.',
+      'Respire dans le flanc étiré, puis change de côté.',
+    ],
+    errors: ['Pencher le buste vers l\'avant.', 'Rentrer la tête dans les épaules.'],
+  },
+  'fente-basse': {
+    title: 'Fente basse (psoas)', query: 'étirement psoas fente basse genou au sol',
+    steps: [
+      'Un genou au sol sur le tapis, l\'autre pied devant, genou au-dessus de la cheville.',
+      'Rentre légèrement le bassin (rétroversion), puis avance doucement les hanches.',
+      'L\'étirement se sent devant la hanche du genou au sol.',
+    ],
+    errors: ['Cambrer le bas du dos.', 'Genou avant qui dépasse largement les orteils.'],
+  },
+  'etirement-fessier': {
+    title: 'Étirement du fessier couché', query: 'étirement fessier figure 4 allongé',
+    steps: [
+      'Allongé sur le dos, pose la cheville droite sur le genou gauche (un 4).',
+      'Attrape l\'arrière de la cuisse gauche et ramène-la doucement vers toi.',
+      'L\'étirement se sent dans la fesse droite. Change de côté.',
+    ],
+    errors: ['Décoller la tête et les épaules.', 'Forcer si le genou croisé tire.'],
+  },
+  papillon: {
+    title: 'Papillon', query: 'étirement papillon adducteurs',
+    steps: [
+      'Assis, plantes de pieds collées, talons vers toi.',
+      'Dos droit, mains sur les chevilles.',
+      'Laisse les genoux descendre tout seuls, sans appuyer dessus.',
+    ],
+    errors: ['Arrondir le dos.', 'Appuyer fort sur les genoux.'],
+  },
+  'etirement-quadriceps': {
+    title: 'Étirement des quadriceps', query: 'étirement quadriceps debout',
+    steps: [
+      'Debout, une main au mur. Attrape la cheville et ramène le talon vers la fesse.',
+      'Genoux serrés, bassin légèrement rentré.',
+      'L\'étirement se sent devant la cuisse.',
+    ],
+    errors: ['Cambrer le dos.', 'Écarter le genou vers l\'extérieur.'],
+  },
+  'etirement-ischios': {
+    title: 'Étirement des ischios', query: 'étirement ischio-jambiers assis jambe tendue',
+    steps: [
+      'Assis, une jambe tendue devant, l\'autre pliée, plante du pied contre la cuisse.',
+      'Dos droit, penche-toi en avant depuis les hanches vers le pied.',
+      'Arrête-toi dès que l\'arrière de la cuisse tire, et respire.',
+    ],
+    errors: ['Arrondir le dos pour toucher le pied.', 'Faire des rebonds.'],
+  },
+  'etirement-mollets': {
+    title: 'Étirement des mollets au mur', query: 'étirement mollets mur soléaire',
+    steps: [
+      'Mains au mur, une jambe tendue derrière, talon au sol, pied droit.',
+      'Avance le bassin vers le mur jusqu\'à sentir le mollet.',
+      'Version genou fléchi : plie le genou arrière, talon toujours au sol, pour étirer le bas du mollet.',
+    ],
+    errors: ['Talon qui décolle.', 'Pied tourné vers l\'extérieur.'],
+  },
+  'chien-tete-bas': {
+    title: 'Chien tête en bas en pédalant', query: 'chien tête en bas pédalage mollets',
+    steps: [
+      'Mains et pieds au sol, bassin haut : le corps forme un V inversé.',
+      'Plie un genou puis l\'autre, en poussant le talon de la jambe tendue vers le sol.',
+      'Dos long, tête entre les bras, relâchée.',
+    ],
+    errors: ['Arrondir le dos : plie plus les genoux.', 'Porter le poids sur les poignets : pousse le sol loin de toi.'],
+  },
   // Alternatives proposées par le bouton « Remplacer ».
   'pompes-declinees': {
     title: 'Pompes pieds surélevés', query: 'pompes pieds surélevés technique',
