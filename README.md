@@ -8,7 +8,7 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 
 1. Ouvre le lien dans Chrome.
 2. Menu ⋮, puis « Ajouter à l'écran d'accueil » (ou « Installer l'application »).
-3. Dans l'appli, onglet Réglages : active les notifications et ajoute tes créneaux à Google Agenda.
+3. Dans l'appli, Réglages (⚙️ en haut à droite) : active les notifications et ajoute tes créneaux à Google Agenda.
 
 ## Fonctionnalités
 

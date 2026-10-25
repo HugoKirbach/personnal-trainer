@@ -13,10 +13,11 @@
 </head>
 <body>
   <header class="top">
-    <span class="brand">🧗 Personal Trainer</span>
+    <span class="brand">🧗 <span class="brand-name">Personal Trainer</span></span>
     <span class="top-right">
       <button id="cloud-badge" class="badge cloud-badge" data-go="settings" aria-label="Compte et sauvegarde" hidden></button>
       <span id="week-badge" class="badge"></span>
+      <button class="icon-btn top-settings" data-go="settings" aria-label="Réglages">⚙️</button>
     </span>
   </header>
   <main id="main"></main>
@@ -26,7 +27,6 @@
     <button data-go="timer"><span>⏱️</span>Chrono</button>
     <button data-go="food"><span>🍽️</span>Alimentation</button>
     <button data-go="stats"><span>📈</span>Suivi</button>
-    <button data-go="settings"><span>⚙️</span>Réglages</button>
   </nav>
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="tooltip" class="tooltip" hidden></div>

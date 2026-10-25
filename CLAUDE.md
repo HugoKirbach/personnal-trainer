@@ -4,7 +4,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 
 ## Structure
 
-- `index.html`, `css/styles.css` : coquille et styles (thème clair/sombre via variables CSS).
+- `index.html`, `css/styles.css` : coquille et styles (thème clair/sombre via variables CSS). Barre du bas à 5 onglets, Chrono au centre ; Réglages par la roue ⚙️ de la barre du haut (`.top-settings`).
 - `js/program.js` : modèles de séances, répartition 3/4/5 séances, cycle de 4 semaines (reprise, construction, intensification, décharge), règles d'adaptation. Logique pure, testée.
 - `js/timer.js` : chrono, minuteur, intervalles (calcul par horodatage), son et vibration.
 - `js/guided.js` : séance guidée (`buildSteps` transforme une séance en étapes avec la phrase annoncée `say`, `GuidedRunner` les enchaîne).

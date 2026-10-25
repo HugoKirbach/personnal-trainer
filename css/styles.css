@@ -69,18 +69,18 @@ p { margin: 6px 0; }
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
-.brand { font-weight: 700; }
+.brand { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: .78rem; padding: 3px 10px; border-radius: 99px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
 main { max-width: 640px; margin: 0 auto; padding: 12px 16px; }
 
 nav {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
 nav button {
-  background: none; border: 0; color: var(--muted); font-size: .64rem; padding: 8px 0 10px; letter-spacing: -.01em; min-width: 0;
+  background: none; border: 0; color: var(--muted); font-size: .7rem; padding: 8px 0 10px; min-width: 0;
   display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 60px;
 }
 nav button span { font-size: 1.3rem; filter: grayscale(1); opacity: .7; }
@@ -318,8 +318,12 @@ section.card > .climbs:first-child { border-top: 0; padding-top: 0; margin-top: 
 .g-results li { padding: 4px 0; }
 
 /* Compte */
-.top-right { display: flex; gap: 6px; align-items: center; min-width: 0; }
-.cloud-badge { min-height: 0; border: 0; padding: 3px 10px; font-size: .78rem; line-height: 1.4; }
+.top-right { display: flex; gap: 4px; align-items: center; flex: none; }
+.cloud-badge { min-height: 0; border: 0; padding: 3px 8px; font-size: .78rem; line-height: 1.4; }
+.top-settings { min-width: 36px; min-height: 36px; margin: -6px -8px -6px 0; padding: 0; border: 0; background: none; font-size: 1.15rem; filter: grayscale(1); opacity: .75; }
+.top-settings.active { filter: none; opacity: 1; }
+/* Avec le badge du compte, le nom laisse la place aux infos sur un téléphone. */
+@media (max-width: 480px) { .top:has(#cloud-badge:not([hidden])) .brand-name { display: none; } }
 .cloud-email form { margin-top: 10px; }
 .backup-list { list-style: none; padding: 0; margin: 4px 0; }
 .backup-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }

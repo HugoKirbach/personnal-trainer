@@ -351,7 +351,7 @@ function toast(msg, ms = 3500) {
 
 function render() {
   document.body.classList.toggle('guided-mode', view === 'guided');
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.go === view));
+  document.querySelectorAll('nav button, .top-settings').forEach((b) => b.classList.toggle('active', b.dataset.go === view));
   const info = weekInfo(new Date(), state.settings.startDate);
   const block = blockAt(seasonPlans(state), info.week);
   $('#week-badge').textContent = `Semaine ${info.week} · ${block ? block.name : info.phase.name}`;

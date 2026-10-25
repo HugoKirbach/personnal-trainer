@@ -117,7 +117,7 @@ try {
   await shot('0g-abdos');
 
   // Active les accès en salle.
-  await page.click('nav [data-go="settings"]');
+  await page.click('.top-settings');
   await page.check('input[name=accessEscalade]');
   await page.check('input[name=accessMuscu]');
   await page.click('[data-form="settings"] button.primary');
@@ -310,7 +310,7 @@ try {
   await shot('4-suivi');
 
   // Réglages : passer à 5 séances.
-  await page.click('nav [data-go="settings"]');
+  await page.click('.top-settings');
   await page.selectOption('select[name=sessionsPerWeek]', '5');
   await page.click('[data-form="settings"] button.primary');
   await page.click('nav [data-go="week"]');
@@ -318,13 +318,13 @@ try {
   check((await page.textContent('.days')).includes('Course fractionnée'), 'fractionné en course');
 
   // Course décochée : le cardio passe sur vélo ou rameur.
-  await page.click('nav [data-go="settings"]');
+  await page.click('.top-settings');
   await page.uncheck('input[name=accessCourse]');
   await page.click('[data-form="settings"] button.primary');
   await page.click('nav [data-go="week"]');
   const week = await page.textContent('.days');
   check(week.includes('Fractionné vélo ou rameur') && !/course/i.test(week), 'plus de course dans la semaine');
-  await page.click('nav [data-go="settings"]');
+  await page.click('.top-settings');
   check(!(await page.isChecked('input[name=voice]')), 'réglage des annonces vocales');
   await shot('5-reglages');
 
@@ -343,7 +343,7 @@ try {
   await shot('4b-objectifs');
 
   // Salles : une équivalence ajustée recale les blocs déjà notés.
-  await page.click('nav [data-go="settings"]');
+  await page.click('.top-settings');
   await page.click('[data-form="gyms"] fieldset >> nth=0 >> summary');
   await page.selectOption('select[name="eq-0-3"]', '6b+');
   await page.click('[data-form="gyms"] button.primary');
@@ -376,7 +376,7 @@ try {
   const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('personnal-trainer:v1')));
 
   const phoneA = await phone(await page.evaluate(() => localStorage.getItem('personnal-trainer:v1')));
-  await phoneA.click('nav [data-go="settings"]');
+  await phoneA.click('.top-settings');
   await phoneA.click('[data-action="cloud-google"]');
   await synced(phoneA);
   check(cloud.db.has('users/u-google/apps/personnal-trainer'), 'données envoyées en ligne');
@@ -385,7 +385,7 @@ try {
   if (shots) await phoneA.screenshot({ path: `${shots}/6-compte.png` });
 
   const phoneB = await phone(null);
-  await phoneB.click('nav [data-go="settings"]');
+  await phoneB.click('.top-settings');
   await phoneB.click('[data-action="cloud-google"]');
   await synced(phoneB);
   await phoneB.click('nav [data-go="stats"]');
@@ -396,7 +396,7 @@ try {
   await phoneB.click('.climbs summary');
   await phoneB.selectOption('[data-form="climb"] select[name=level]', '|7a');
   await phoneB.click('[data-form="climb"] button');
-  await phoneB.click('nav [data-go="settings"]');
+  await phoneB.click('.top-settings');
   await phoneB.click('[data-action="cloud-sync"]');
   await synced(phoneB);
   await phoneA.click('[data-action="cloud-sync"]');
