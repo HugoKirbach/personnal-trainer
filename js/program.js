@@ -69,11 +69,35 @@ export const TIPS = {
   ],
 };
 
+// Un exercice décrit ses séries pour estimer sa durée et piloter la séance guidée :
+//   sets       nombre de séries (ou de tours)
+//   reps       répétitions affichées ("10", "8 à 12", "10 par jambe") pour un exercice compté
+//   work       durée d'une série en secondes (exacte si timed, estimée sinon)
+//   timed      true si la série est chronométrée (gainage, suspensions, course)
+//   rest       repos entre les séries, en secondes
+//   inner      intervalles à l'intérieur d'une série : { work, rest, rounds }, innerLabels pour nommer chaque intervalle
+//   circuit    exercices enchaînés dans un tour : [{ name, label, work, timed?, info? }]
+//   setLabels  libellé de chaque série (pyramides)
+//   restAfter  repos avant l'exercice suivant, en secondes
+//   info       fiche(s) tuto de guides.js
+//   note       consignes affichées après la prescription
 const MOBILITY = {
-  name: 'Échauffement nuque, épaules, dos',
-  detail: 'Rotations de nuque lentes, haussements d\'épaules, cercles de bras, chat-vache, rotations thoraciques. 30 s par mouvement.',
-  timer: { mode: 'interval', work: 30, rest: 10, rounds: 8, label: 'Mobilité' },
+  name: 'Échauffement nuque, épaules, dos', info: 'mobilite', label: 'Mobilité',
+  inner: { work: 30, rest: 10, rounds: 8 }, restAfter: 30,
+  innerLabels: ['Inclinaisons de nuque', 'Rotations douces de nuque', 'Haussements d\'épaules', 'Cercles de bras vers l\'avant', 'Cercles de bras vers l\'arrière', 'Chat-vache', 'Rotation thoracique gauche', 'Rotation thoracique droite'],
+  note: 'Rotations de nuque lentes, haussements d\'épaules, cercles de bras, chat-vache, rotations thoraciques.',
 };
+
+const WARMUP_GYM = (seconds, note) => ({ name: 'Échauffement', info: 'echauffement-general', work: seconds, timed: true, restAfter: 30, note });
+const PLANK = (sets) => ({ name: 'Gainage : planche', info: 'planche', sets, work: 40, timed: true, rest: 20, note: 'Menton rentré.' });
+const SIDE_PLANK_CIRCUIT = (sets) => ({
+  name: 'Gainage latéral et dead bug', info: ['gainage-lateral', 'dead-bug'], sets, rest: 30,
+  circuit: [
+    { name: 'Gainage latéral gauche', label: '30 s de gainage latéral de chaque côté', work: 30, timed: true, info: 'gainage-lateral' },
+    { name: 'Gainage latéral droit', work: 30, timed: true, info: 'gainage-lateral' },
+    { name: 'Dead bug', label: '10 dead bugs lents', work: 45, info: 'dead-bug' },
+  ],
+});
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const grade = (i) => GRADES[clamp(i, 0, GRADES.length - 1)];
@@ -141,6 +165,51 @@ export function resolveKey(key, state, express = false) {
   return key;
 }
 
+// ---------- Durées ----------
+export function fmtDuration(sec) {
+  if (sec < 60) return `${sec} s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s ? `${m} min ${String(s).padStart(2, '0')}` : `${m} min`;
+}
+
+// Durée d'une séance arrondie à 5 min : "50 min" ou "1h05".
+export function durationLabel(sec) {
+  const m = Math.max(5, Math.round(sec / 300) * 5);
+  if (m < 60) return `${m} min`;
+  const mm = m % 60;
+  return `${Math.floor(m / 60)}h${mm ? String(mm).padStart(2, '0') : ''}`;
+}
+
+const innerSeconds = (i) => i.rounds * i.work + (i.rounds - 1) * i.rest;
+const setSeconds = (e) => (e.circuit ? e.circuit.reduce((t, c) => t + c.work, 0) : e.inner ? innerSeconds(e.inner) : e.work);
+export const exerciseSeconds = (e) => e.sets * setSeconds(e) + (e.sets - 1) * (e.rest || 0);
+export const sessionSeconds = (exs) => exs.reduce((t, e) => t + exerciseSeconds(e) + (e.restAfter || 0), 0);
+
+function describe(e) {
+  const unit = e.unit || (e.circuit ? 'tours' : 'séries');
+  let main;
+  if (e.circuit) main = `${e.sets} tour${e.sets > 1 ? 's' : ''} : ${e.circuit.filter((c) => c.label).map((c) => c.label).join(', ')}`;
+  else if (e.setLabels) main = `${e.sets} ${unit} : ${e.setLabels.join(', ')}`;
+  else if (e.inner) main = `${e.sets > 1 ? `${e.sets} séries de ` : ''}${e.inner.rounds} × (${fmtDuration(e.inner.work)} d'effort${e.inner.rest ? ` / ${fmtDuration(e.inner.rest)} de repos` : ''})`;
+  else if (e.reps) main = `${e.sets} × ${e.reps}`;
+  else if (e.sets > 1) main = `${e.sets} × ${fmtDuration(e.work)}`;
+  else main = fmtDuration(e.work);
+  const rest = e.sets > 1 && e.rest ? `, repos ${fmtDuration(e.rest)} entre les ${unit}` : '';
+  return `${main}${rest}.${e.note ? ` ${e.note}` : ''}`;
+}
+
+// Réglage du chrono lancé depuis le bouton ⏱ d'un exercice.
+function timerFor(e) {
+  const label = e.label || e.name;
+  if (e.inner) return { mode: 'interval', ...e.inner, sets: e.sets, setRest: e.rest || 0, label };
+  if (e.circuit) return e.rest ? { mode: 'countdown', seconds: e.rest, label: `Repos · ${label}` } : null;
+  if (e.timed && e.sets > 1) return { mode: 'interval', work: e.work, rest: e.rest || 0, rounds: e.sets, label };
+  if (e.timed) return { mode: 'countdown', seconds: e.work, label };
+  if (e.rest) return { mode: 'countdown', seconds: e.rest, label: `Repos · ${label}` };
+  return null;
+}
+
 export function buildSession(key, date, state, express = false) {
   const info = weekInfo(date, state.settings.startDate);
   const a = state.adapt;
@@ -149,9 +218,21 @@ export function buildSession(key, date, state, express = false) {
   const type = t.type;
   const f = info.mult * (a[type] ?? 1);
   const ctx = { f, info, g: a.gradeIdx, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
+  const raw = t.build(ctx).filter(Boolean);
+  const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
+  const items = raw.filter((e) => e.kind !== 'note');
+  const exercises = items.map((e, i) => {
+    const x = { sets: 1, ...e };
+    x.restAfter = i === items.length - 1 ? 0 : (e.restAfter ?? t.restAfter ?? 90);
+    x.detail = describe(x);
+    x.timer = timerFor(x);
+    x.seconds = exerciseSeconds(x);
+    return x;
+  });
+  const totalSeconds = sessionSeconds(exercises);
   return {
-    key, variant, type, express, home: !!t.home, run: !!t.run,
-    title: t.title, duration: t.duration, phase: info.phase, week: info.week, exercises: t.build(ctx),
+    key, variant, type, express, home: !!t.home, run: !!t.run, notes,
+    title: t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
   };
 }
 
@@ -159,175 +240,221 @@ const minutes = (base, f) => Math.round((base * f) / 5) * 5;
 
 const TEMPLATES = {
   bloc: {
-    type: 'escalade', title: 'Escalade bloc', duration: '1h30',
-    build: ({ f, info, g, sets }) => [
+    type: 'escalade', title: 'Escalade bloc', restAfter: 120,
+    build: ({ info, g, sets }) => [
       MOBILITY,
-      { name: 'Montée en température', detail: `6 à 8 blocs faciles (niveau ~${grade(g - 3)}), grimpés lentement et proprement.` },
-      { name: 'Blocs au niveau', detail: `${sets(5)} blocs autour de ${grade(g - 1)}, 2 à 3 essais chacun. Repos 3 min entre les essais.`, timer: { mode: 'countdown', seconds: 180, label: 'Repos bloc' } },
+      { name: 'Montée en température', info: 'grimpe-echauffement', work: 600, timed: true, note: `6 à 8 blocs faciles (niveau ~${grade(g - 3)}), grimpés lentement et proprement.` },
+      { name: 'Blocs au niveau', info: 'bloc-niveau', sets: sets(5), reps: '2 à 3 essais', work: 150, rest: 180, unit: 'blocs', note: `Un bloc différent à chaque fois, autour de ${grade(g - 1)}.` },
       info.phaseIndex === 3
-        ? { name: 'Séance technique (décharge)', detail: 'Pas de projet cette semaine : refais des blocs faciles en cherchant le geste parfait, pieds silencieux.' }
-        : { name: 'Projet', detail: `${minutes(25, f)} min sur 1 ou 2 blocs à ta limite (~${grade(g)}). Repos 4 min entre les essais.`, timer: { mode: 'countdown', seconds: 240, label: 'Repos projet' } },
+        ? { name: 'Séance technique (décharge)', info: 'technique-pieds', work: 900, timed: true, note: 'Pas de projet cette semaine : blocs faciles en cherchant le geste parfait, pieds silencieux.' }
+        : { name: 'Projet', info: 'projet', sets: sets(6), reps: '1 essai', work: 60, rest: 240, unit: 'essais', note: `1 ou 2 blocs à ta limite (~${grade(g)}).` },
       info.week >= 5 && info.phaseIndex !== 3
-        ? { name: 'Poutre douce (salle d\'escalade)', detail: `${sets(5)} séries de 6 × (7 s suspendu / 3 s repos), réglette 20 mm, prise tendue, pieds au sol si besoin. Effort 6/10 max. Repos 2 min entre séries.`, timer: { mode: 'interval', work: 7, rest: 3, rounds: 6, sets: sets(5), setRest: 120, label: 'Poutre' } }
-        : { name: 'Pas de poutre pour l\'instant', detail: 'On laisse tes poulies se réhabituer à la grimpe. La poutre arrive en semaine 5.' },
-      { name: 'Retour au calme', detail: 'Étirements doux des avant-bras et des doigts, nuque, dos. 5 min.' },
+        ? { name: 'Poutre douce (salle d\'escalade)', info: 'poutre', label: 'Poutre', sets: sets(5), inner: { work: 7, rest: 3, rounds: 6 }, rest: 120, note: 'Réglette 20 mm, prise tendue, pieds au sol si besoin. Effort 6/10 max.' }
+        : { kind: 'note', text: 'Pas de poutre avant la semaine 5 : on laisse tes poulies se réhabituer à la grimpe.' },
+      { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements doux des avant-bras et des doigts, nuque, dos.' },
     ],
   },
   voie: {
-    type: 'escalade', title: 'Escalade voie', duration: '1h45',
-    build: ({ f, info, g, sets }) => [
-      MOBILITY,
-      { name: 'Voies d\'échauffement', detail: `2 à 3 voies faciles en ${grade(g - 3)}.` },
-      { name: 'Pyramide', detail: `2 voies en ${grade(g - 2)}, 2 voies en ${grade(g - 1)}, puis ${info.phaseIndex === 3 ? 'stop' : `1 à 2 essais en ${grade(g)}`}. Repos 5 min entre chaque.`, timer: { mode: 'countdown', seconds: 300, label: 'Repos voie' } },
-      info.phaseIndex === 2
-        ? { name: 'Endurance : 4 × 4', detail: `${sets(4)} séries de 4 voies faciles (${grade(g - 4)}) enchaînées sans repos. 4 min entre les séries.`, timer: { mode: 'countdown', seconds: 240, label: 'Repos 4×4' } }
-        : { name: 'Continuité', detail: `${sets(3)} fois une voie facile (${grade(g - 3)}) montée, désescaladée ou relancée sans toucher le sol. Repos 5 min.`, timer: { mode: 'countdown', seconds: 300, label: 'Repos continuité' } },
-      { name: 'Retour au calme', detail: 'Une voie très facile en souplesse, puis étirements avant-bras, nuque et dos.' },
-    ],
+    type: 'escalade', title: 'Escalade voie', restAfter: 120,
+    build: ({ info, g, sets }) => {
+      const pyramid = [g - 2, g - 2, g - 1, g - 1, ...(info.phaseIndex === 3 ? [] : [g])].map((x) => grade(x));
+      return [
+        MOBILITY,
+        { name: 'Voies d\'échauffement', info: 'grimpe-echauffement', sets: 3, reps: 'voie facile', work: 240, rest: 90, unit: 'voies', note: `Niveau ~${grade(g - 3)}.` },
+        { name: 'Pyramide', info: 'pyramide-voie', sets: pyramid.length, setLabels: pyramid, work: 300, rest: 240, unit: 'voies', note: 'Repère repos et clippages avant de partir.' },
+        info.phaseIndex === 2
+          ? { name: 'Endurance : 4 × 4', info: '4x4', sets: sets(3), reps: '4 voies faciles enchaînées', work: 480, rest: 240, note: `Niveau ~${grade(g - 4)}, sans repos entre les 4 voies.` }
+          : { name: 'Continuité', info: 'continuite', sets: sets(3), reps: 'voie facile montée, désescaladée puis remontée', work: 420, rest: 300, note: `Niveau ~${grade(g - 3)}, sans toucher le sol.` },
+        { name: 'Retour au calme', info: 'etirements-grimpe', work: 420, timed: true, note: 'Une voie très facile en souplesse, puis étirements avant-bras, nuque et dos.' },
+      ];
+    },
   },
   haut: {
-    type: 'muscu', title: 'Muscu haut du corps et gainage', duration: '1h15',
+    type: 'muscu', title: 'Muscu haut du corps et gainage', restAfter: 90,
     build: ({ sets }) => [
-      { name: 'Échauffement', detail: '5 min de rameur ou vélo, puis mobilité nuque et épaules.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: 'Développé couché haltères', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Rowing assis poulie, prise neutre', detail: `${sets(3)} × 10, épaules basses. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Développé épaules haltères assis', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Pompes ou dips assistés (machine)', detail: `${sets(3)} × 8 à 12. Repos 75 s.`, timer: { mode: 'countdown', seconds: 75, label: 'Repos' } },
-      { name: 'Face pull à la poulie', detail: `${sets(3)} × 15, léger. Excellent pour la nuque et les épaules de grimpeur. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Rotations externes', detail: `${sets(2)} × 15 par bras, poulie basse ou élastique. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Extensions des doigts (élastique)', detail: `${sets(2)} × 20. Antagonistes des fléchisseurs, protège les poulies.` },
-      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s, menton rentré. 20 s de repos.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
+      WARMUP_GYM(420, '5 min de rameur ou de vélo, puis mobilité nuque et épaules.'),
+      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      { name: 'Rowing assis poulie, prise neutre', info: 'rowing-poulie', sets: sets(3), reps: '10', work: 40, rest: 90, note: 'Épaules basses.' },
+      { name: 'Développé épaules haltères assis', info: 'developpe-epaules', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      { name: 'Pompes ou dips assistés (machine)', info: ['pompes', 'dips-machine'], sets: sets(3), reps: '8 à 12', work: 40, rest: 75 },
+      { name: 'Face pull à la poulie', info: 'face-pull', sets: sets(3), reps: '15', work: 45, rest: 60, note: 'Léger. Excellent pour la nuque et les épaules de grimpeur.' },
+      { name: 'Rotations externes', info: 'rotations-externes', sets: sets(2), reps: '15 par bras', work: 70, rest: 45, note: 'Poulie basse ou élastique, coude collé au corps.', restAfter: 60 },
+      { name: 'Extensions des doigts (élastique)', info: 'extensions-doigts', sets: sets(2), reps: '20', work: 40, rest: 30, note: 'Antagonistes des fléchisseurs, protège les poulies.', restAfter: 60 },
+      PLANK(sets(3)),
     ],
   },
   bas: {
-    type: 'muscu', title: 'Muscu bas du corps et course', duration: '1h20', run: true,
+    type: 'muscu', title: 'Muscu bas du corps et course', restAfter: 90, run: true,
     build: ({ f, sets }) => [
-      { name: 'Échauffement', detail: '5 min de vélo, squats au poids du corps, mobilité hanches et dos.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: 'Presse à cuisses ou goblet squat', detail: `${sets(3)} × 10. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
-      { name: 'Soulevé de terre roumain haltères', detail: `${sets(3)} × 10, dos neutre, charge modérée. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
-      { name: 'Fentes marchées', detail: `${sets(3)} × 10 par jambe. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Hip thrust machine', detail: `${sets(3)} × 12. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Gainage latéral et dead bug', detail: `${sets(3)} tours : 30 s par côté + 10 dead bugs lents.`, timer: { mode: 'interval', work: 30, rest: 15, rounds: sets(3) * 2, label: 'Gainage' } },
-      { name: 'Course sur tapis', detail: `${minutes(20, f)} min en endurance, en aisance respiratoire.`, timer: { mode: 'countdown', seconds: minutes(20, f) * 60, label: 'Course' } },
+      WARMUP_GYM(300, '5 min de vélo, squats au poids du corps, mobilité hanches et dos.'),
+      { name: 'Presse à cuisses ou goblet squat', info: ['presse', 'goblet-squat'], sets: sets(3), reps: '10', work: 45, rest: 120 },
+      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '10', work: 45, rest: 120, note: 'Dos neutre, charge modérée.' },
+      { name: 'Fentes marchées', info: 'fentes-marchees', sets: sets(3), reps: '10 par jambe', work: 70, rest: 90 },
+      { name: 'Hip thrust machine', info: 'hip-thrust', sets: sets(3), reps: '12', work: 45, rest: 90 },
+      SIDE_PLANK_CIRCUIT(sets(3)),
+      { name: 'Course sur tapis', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: 'En endurance, en aisance respiratoire.' },
     ],
   },
   full: {
-    type: 'muscu', title: 'Muscu corps complet et course', duration: '1h20', run: true,
+    type: 'muscu', title: 'Muscu corps complet et course', restAfter: 90, run: true,
     build: ({ f, sets }) => [
-      { name: 'Échauffement', detail: '5 min de rameur, mobilité nuque, épaules et hanches.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: 'Goblet squat ou presse', detail: `${sets(3)} × 10. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
-      { name: 'Développé couché haltères', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Soulevé de terre roumain haltères', detail: `${sets(3)} × 10, dos neutre. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
-      { name: 'Développé épaules haltères', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Face pull et rotations externes', detail: `${sets(3)} × 15 de chaque, léger. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
-      { name: 'Course sur tapis', detail: `${minutes(15, f)} min en endurance.`, timer: { mode: 'countdown', seconds: minutes(15, f) * 60, label: 'Course' } },
+      WARMUP_GYM(300, '5 min de rameur, mobilité nuque, épaules et hanches.'),
+      { name: 'Goblet squat ou presse', info: ['goblet-squat', 'presse'], sets: sets(3), reps: '10', work: 45, rest: 120 },
+      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '10', work: 45, rest: 120, note: 'Dos neutre.' },
+      { name: 'Développé épaules haltères', info: 'developpe-epaules', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      {
+        name: 'Face pull et rotations externes', info: ['face-pull', 'rotations-externes'], sets: sets(3), rest: 60, note: 'Léger.',
+        circuit: [
+          { name: 'Face pull', label: '15 face pulls', work: 45, info: 'face-pull' },
+          { name: 'Rotations externes', label: '15 rotations externes par bras', work: 70, info: 'rotations-externes' },
+        ],
+      },
+      PLANK(sets(3)),
+      { name: 'Course sur tapis', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: 'En endurance.' },
     ],
   },
   fractionne: {
-    type: 'cardio', title: 'Course fractionnée', duration: '50 min', run: true,
+    type: 'cardio', title: 'Course fractionnée', restAfter: 60, run: true,
     build: ({ sets }) => [
-      { name: 'Footing d\'échauffement', detail: '15 min très facile, puis 3 accélérations progressives.', timer: { mode: 'countdown', seconds: 900, label: 'Échauffement' } },
-      { name: '30/30', detail: `${sets(2)} séries de ${sets(8)} × (30 s vite / 30 s trot). 3 min de trot entre les séries.`, timer: { mode: 'interval', work: 30, rest: 30, rounds: sets(8), sets: sets(2), setRest: 180, label: '30/30' } },
-      { name: 'Retour au calme', detail: '10 min de footing lent, puis étirements mollets et ischios.', timer: { mode: 'countdown', seconds: 600, label: 'Retour au calme' } },
+      { name: 'Footing d\'échauffement', info: 'course-endurance', work: 900, timed: true, note: 'Très facile, puis 3 accélérations progressives.' },
+      { name: '30/30', info: 'fractionne-30-30', label: '30/30', sets: sets(2), inner: { work: 30, rest: 30, rounds: sets(8) }, rest: 180, note: 'Vite sur l\'effort, trot pendant les repos.' },
+      { name: 'Retour au calme', info: 'course-endurance', work: 600, timed: true, note: 'Footing lent, puis étirements mollets et ischios.' },
     ],
   },
 
   // ---------- À la maison : barre de traction, haltères 10 kg, gilet lesté 8 kg, tapis ----------
   blocMaison: {
-    type: 'escalade', title: 'Force grimpe à la maison', duration: '1h', home: true,
-    build: ({ info, sets }) => [
-      MOBILITY,
-      { name: 'Activation à la barre', detail: '2 tours : 10 tirages d\'omoplates bras tendus (scap pulls) + 10 cercles de bras.' },
-      { name: 'Suspensions actives', detail: `${sets(4)} × 20 s à la barre, épaules engagées (pas avachi). 40 s de repos. Prise large et confortable, pas les doigts.`, timer: { mode: 'interval', work: 20, rest: 40, rounds: sets(4), label: 'Suspensions' } },
-      info.week >= 5 && info.phaseIndex !== 3
-        ? { name: 'Tractions lestées', detail: `${sets(4)} × 3 à 5 avec le gilet de 8 kg, amplitude complète. Repos 2 min 30.`, timer: { mode: 'countdown', seconds: 150, label: 'Repos tractions' } }
-        : { name: 'Tractions', detail: `${sets(4)} × 5 à 8, amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos tractions' } },
-      { name: 'Tractions négatives', detail: `${sets(3)} × 3, descente en 5 secondes. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Relevés de genoux suspendu', detail: `${sets(3)} × 8 à 10, sans balancer. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Pompes', detail: `${sets(3)} × 15. Antagonistes des tractions. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Oiseau haltères', detail: `${sets(3)} × 15, buste penché, léger. Bon pour la nuque et le haut du dos. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Gainage creux (hollow)', detail: `${sets(3)} × 30 s, bas du dos plaqué au sol.`, timer: { mode: 'interval', work: 30, rest: 30, rounds: sets(3), label: 'Hollow' } },
-      { name: 'Retour au calme', detail: 'Étirements avant-bras, pectoraux, nuque et dos. 5 min.' },
-    ],
+    type: 'escalade', title: 'Force grimpe à la maison', home: true, restAfter: 90,
+    build: ({ info, sets }) => {
+      const weighted = info.week >= 5 && info.phaseIndex !== 3;
+      return [
+        MOBILITY,
+        {
+          name: 'Activation à la barre', info: 'scap-pulls', sets: 2, rest: 30, restAfter: 60,
+          circuit: [
+            { name: 'Tirages d\'omoplates (scap pulls)', label: '10 tirages d\'omoplates bras tendus', work: 40, info: 'scap-pulls' },
+            { name: 'Cercles de bras', label: '10 cercles de bras', work: 20 },
+          ],
+        },
+        { name: 'Suspensions actives', info: 'suspensions', sets: sets(4), work: 20, timed: true, rest: 40, note: 'Épaules engagées. Prise large et confortable, pas du bout des doigts.' },
+        weighted
+          ? { name: 'Tractions lestées', info: 'tractions', sets: sets(4), reps: '3 à 5 avec le gilet de 8 kg', work: 25, rest: 150, note: 'Amplitude complète, sans élan.' }
+          : { name: 'Tractions', info: 'tractions', sets: sets(4), reps: '5 à 8', work: 30, rest: 120, note: 'Amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve.' },
+        { name: 'Tractions négatives', info: 'tractions-negatives', sets: sets(3), reps: '3', work: 25, rest: 90, note: 'Descente en 5 secondes.' },
+        { name: 'Relevés de genoux suspendu', info: 'releves-genoux', sets: sets(3), reps: '8 à 10', work: 30, rest: 60, note: 'Sans balancer.' },
+        { name: 'Pompes', info: 'pompes', sets: sets(3), reps: '15', work: 35, rest: 60, note: 'Antagonistes des tractions.' },
+        { name: 'Oiseau haltères', info: 'oiseau', sets: sets(3), reps: '15', work: 45, rest: 45, note: 'Léger. Bon pour la nuque et le haut du dos.' },
+        { name: 'Gainage creux (hollow)', info: 'hollow', sets: sets(3), work: 30, timed: true, rest: 30, note: 'Bas du dos plaqué au sol.', restAfter: 30 },
+        { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements avant-bras, pectoraux, nuque et dos.' },
+      ];
+    },
   },
   voieMaison: {
-    type: 'escalade', title: 'Endurance grimpe à la maison', duration: '50 min', home: true,
+    type: 'escalade', title: 'Endurance grimpe à la maison', home: true, restAfter: 90,
     build: ({ sets }) => [
       MOBILITY,
-      { name: 'Circuit endurance', detail: `${sets(4)} tours sans pause : 30 s suspendu, 5 tractions, 10 pompes, 30 s de planche. 2 min de repos entre les tours.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos circuit' } },
-      { name: 'Pyramide de tractions', detail: '1, 2, 3, 4, 3, 2, 1 tractions. Repos = le temps que tu viens de passer à tirer. Arrête la pyramide si les tractions deviennent moches.' },
-      { name: 'Superman', detail: `${sets(3)} × 12 lents, regard vers le sol pour protéger la nuque.` },
-      { name: 'Extensions de poignets haltère', detail: `${sets(2)} × 15 par bras, léger. Antagonistes des avant-bras.` },
-      { name: 'Retour au calme', detail: 'Étirements avant-bras, épaules, nuque et dos.' },
+      {
+        name: 'Circuit endurance', info: ['suspensions', 'tractions', 'pompes', 'planche'], sets: sets(4), rest: 120, note: 'Enchaîne sans pause à l\'intérieur d\'un tour.',
+        circuit: [
+          { name: 'Suspension', label: '30 s suspendu', work: 30, timed: true, info: 'suspensions' },
+          { name: 'Tractions', label: '5 tractions', work: 20, info: 'tractions' },
+          { name: 'Pompes', label: '10 pompes', work: 25, info: 'pompes' },
+          { name: 'Planche', label: '30 s de planche', work: 30, timed: true, info: 'planche' },
+        ],
+      },
+      { name: 'Pyramide de tractions', info: 'tractions', sets: 7, setLabels: ['1', '2', '3', '4', '3', '2', '1'].map((n) => `${n} traction${n === '1' ? '' : 's'}`), work: 15, rest: 30, unit: 'paliers', note: 'Repos = le temps passé à tirer. Arrête si les tractions deviennent moches.' },
+      { name: 'Superman', info: 'superman', sets: sets(3), reps: '12 lents', work: 40, rest: 45, note: 'Regard vers le sol pour protéger la nuque.' },
+      { name: 'Extensions de poignets haltère', info: 'extensions-poignets', sets: sets(2), reps: '15 par bras', work: 60, rest: 30, note: 'Léger. Antagonistes des avant-bras.', restAfter: 30 },
+      { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements avant-bras, épaules, nuque et dos.' },
     ],
   },
   hautMaison: {
-    type: 'muscu', title: 'Haut du corps à la maison', duration: '1h', home: true,
+    type: 'muscu', title: 'Haut du corps à la maison', home: true, restAfter: 90,
     build: ({ info, sets }) => [
-      { name: 'Échauffement', detail: '2 min de jumping jacks, cercles de bras, 10 pompes inclinées sur une chaise.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: info.week >= 5 ? 'Pompes lestées' : 'Pompes', detail: `${sets(4)} × 12 à 15${info.week >= 5 ? ' avec le gilet de 8 kg' : ''}, descente en 2 secondes. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Rowing haltère un bras', detail: `${sets(3)} × 12 par bras, pause d'une seconde en haut. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Pompes piquées (épaules)', detail: `${sets(3)} × 8 à 10, hanches hautes, tête vers le sol. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Développé épaules haltères debout', detail: `${sets(3)} × 12. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Élévations latérales', detail: `${sets(3)} × 15, lent. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Oiseau haltères', detail: `${sets(3)} × 15. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Pompes diamant (triceps)', detail: `${sets(2)} × 8 à 12, mains rapprochées. Remplace les dips. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Curl haltères', detail: `${sets(2)} × 12, tempo lent. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s, menton rentré.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
+      WARMUP_GYM(300, '2 min de jumping jacks, cercles de bras, 10 pompes inclinées sur une chaise.'),
+      info.week >= 5
+        ? { name: 'Pompes lestées', info: 'pompes', sets: sets(4), reps: '12 à 15', work: 40, rest: 90, note: 'Avec le gilet de 8 kg, descente en 2 secondes.' }
+        : { name: 'Pompes', info: 'pompes', sets: sets(4), reps: '12 à 15', work: 40, rest: 90, note: 'Descente en 2 secondes.' },
+      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '12 par bras', work: 80, rest: 60, note: 'Pause d\'une seconde en haut.' },
+      { name: 'Pompes piquées (épaules)', info: 'pompes-piquees', sets: sets(3), reps: '8 à 10', work: 35, rest: 90, note: 'Hanches hautes, tête vers le sol.' },
+      { name: 'Développé épaules haltères debout', info: 'developpe-epaules', sets: sets(3), reps: '12', work: 40, rest: 60 },
+      { name: 'Élévations latérales', info: 'elevations-laterales', sets: sets(3), reps: '15', work: 45, rest: 45, note: 'Lent.', restAfter: 60 },
+      { name: 'Oiseau haltères', info: 'oiseau', sets: sets(3), reps: '15', work: 45, rest: 45, restAfter: 60 },
+      { name: 'Pompes diamant (triceps)', info: 'pompes-diamant', sets: sets(2), reps: '8 à 12', work: 35, rest: 60, note: 'Mains rapprochées. Remplace les dips.', restAfter: 60 },
+      { name: 'Curl haltères', info: 'curl', sets: sets(2), reps: '12', work: 40, rest: 45, note: 'Tempo lent.', restAfter: 60 },
+      PLANK(sets(3)),
     ],
   },
   basMaison: {
-    type: 'muscu', title: 'Bas du corps à la maison et course', duration: '1h15', home: true, run: true,
+    type: 'muscu', title: 'Bas du corps à la maison et course', home: true, run: true, restAfter: 90,
     build: ({ f, sets }) => [
-      { name: 'Échauffement', detail: 'Squats au poids du corps, fentes, mobilité des hanches et du dos. 5 min.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: 'Goblet squat lesté', detail: `${sets(4)} × 15 avec l'haltère et le gilet, descente en 3 secondes pour compenser la charge légère. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Fentes bulgares', detail: `${sets(3)} × 10 par jambe, pied arrière sur une chaise. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Soulevé de terre roumain sur une jambe', detail: `${sets(3)} × 10 par jambe, haltère en main, dos neutre. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Hip thrust au sol lesté', detail: `${sets(3)} × 15, gilet et haltère sur les hanches. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Mollets sur une marche', detail: `${sets(3)} × 20, sur une jambe si c'est trop facile.` },
-      { name: 'Gainage latéral et dead bug', detail: `${sets(3)} tours : 30 s par côté + 10 dead bugs lents.`, timer: { mode: 'interval', work: 30, rest: 15, rounds: sets(3) * 2, label: 'Gainage' } },
-      { name: 'Course dehors', detail: `${minutes(20, f)} min en endurance, en aisance respiratoire.`, timer: { mode: 'countdown', seconds: minutes(20, f) * 60, label: 'Course' } },
+      WARMUP_GYM(300, 'Squats au poids du corps, fentes, mobilité des hanches et du dos.'),
+      { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(4), reps: '15', work: 60, rest: 90, note: 'Haltère et gilet, descente en 3 secondes pour compenser la charge légère.' },
+      { name: 'Fentes bulgares', info: 'fentes-bulgares', sets: sets(3), reps: '10 par jambe', work: 90, rest: 90, note: 'Pied arrière sur une chaise.' },
+      { name: 'Soulevé de terre roumain sur une jambe', info: 'souleve-roumain-unilateral', sets: sets(3), reps: '10 par jambe', work: 90, rest: 60, note: 'Haltère en main, dos neutre.' },
+      { name: 'Hip thrust au sol lesté', info: 'hip-thrust', sets: sets(3), reps: '15', work: 45, rest: 60, note: 'Gilet et haltère sur les hanches.', restAfter: 60 },
+      { name: 'Mollets sur une marche', info: 'mollets', sets: sets(3), reps: '20', work: 45, rest: 45, note: 'Sur une jambe si c\'est trop facile.', restAfter: 60 },
+      SIDE_PLANK_CIRCUIT(sets(3)),
+      { name: 'Course dehors', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: 'En endurance, en aisance respiratoire.' },
     ],
   },
   fullMaison: {
-    type: 'muscu', title: 'Corps complet à la maison et course', duration: '1h10', home: true, run: true,
+    type: 'muscu', title: 'Corps complet à la maison et course', home: true, run: true, restAfter: 90,
     build: ({ f, sets }) => [
-      { name: 'Échauffement', detail: 'Jumping jacks, mobilité nuque, épaules et hanches. 5 min.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
-      { name: 'Goblet squat lesté', detail: `${sets(3)} × 15, gilet et haltère. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Pompes', detail: `${sets(3)} × 12 à 15. Repos 75 s.`, timer: { mode: 'countdown', seconds: 75, label: 'Repos' } },
-      { name: 'Rowing haltère un bras', detail: `${sets(3)} × 12 par bras. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Fentes bulgares', detail: `${sets(3)} × 10 par jambe. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Développé épaules haltères', detail: `${sets(3)} × 12. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
-      { name: 'Oiseau haltères', detail: `${sets(3)} × 15, léger. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
-      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
-      { name: 'Course dehors', detail: `${minutes(15, f)} min en endurance.`, timer: { mode: 'countdown', seconds: minutes(15, f) * 60, label: 'Course' } },
+      WARMUP_GYM(300, 'Jumping jacks, mobilité nuque, épaules et hanches.'),
+      { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(3), reps: '15', work: 60, rest: 90, note: 'Haltère et gilet.' },
+      { name: 'Pompes', info: 'pompes', sets: sets(3), reps: '12 à 15', work: 40, rest: 75 },
+      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '12 par bras', work: 80, rest: 60 },
+      { name: 'Fentes bulgares', info: 'fentes-bulgares', sets: sets(3), reps: '10 par jambe', work: 90, rest: 90 },
+      { name: 'Développé épaules haltères', info: 'developpe-epaules', sets: sets(3), reps: '12', work: 40, rest: 60 },
+      { name: 'Oiseau haltères', info: 'oiseau', sets: sets(3), reps: '15', work: 45, rest: 45, note: 'Léger.', restAfter: 60 },
+      PLANK(sets(3)),
+      { name: 'Course dehors', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: 'En endurance.' },
     ],
   },
 
   // ---------- Express : 20 à 30 min, à la maison ----------
   expressGrimpe: {
-    type: 'escalade', title: 'Express grimpe à la maison', duration: '25 min', home: true,
+    type: 'escalade', title: 'Express grimpe à la maison', home: true, restAfter: 30,
     build: ({ sets }) => [
-      { name: 'Mobilité express', detail: 'Nuque, épaules, poignets, chat-vache. 30 s par mouvement.', timer: { mode: 'interval', work: 30, rest: 10, rounds: 4, label: 'Mobilité' } },
-      { name: 'Circuit barre', detail: `${clamp(sets(4), 3, 5)} tours : 5 à 8 tractions, 20 s suspendu, 10 pompes, 30 s de gainage creux. 1 min de repos entre les tours.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos circuit' } },
-      { name: 'Étirements', detail: 'Avant-bras, pectoraux, nuque. 3 min.' },
+      { ...MOBILITY, name: 'Mobilité express', note: 'Nuque, épaules, poignets, chat-vache.' },
+      {
+        name: 'Circuit barre', info: ['tractions', 'suspensions', 'pompes', 'hollow'], sets: clamp(sets(5), 4, 6), rest: 75,
+        circuit: [
+          { name: 'Tractions', label: '5 à 8 tractions', work: 30, info: 'tractions' },
+          { name: 'Suspension', label: '20 s suspendu', work: 20, timed: true, info: 'suspensions' },
+          { name: 'Pompes', label: '10 pompes', work: 25, info: 'pompes' },
+          { name: 'Gainage creux', label: '30 s de gainage creux', work: 30, timed: true, info: 'hollow' },
+        ],
+      },
+      { name: 'Étirements', info: 'etirements-grimpe', work: 240, timed: true, note: 'Avant-bras, pectoraux, nuque.' },
     ],
   },
   expressRenfo: {
-    type: 'muscu', title: 'Express renfo à la maison', duration: '25 min', home: true,
+    type: 'muscu', title: 'Express renfo à la maison', home: true, restAfter: 30,
     build: () => [
-      { name: 'Échauffement', detail: 'Jumping jacks, cercles de bras, squats au poids du corps. 3 min.', timer: { mode: 'countdown', seconds: 180, label: 'Échauffement' } },
-      { name: 'EMOM 20 min', detail: 'Chaque minute, un exercice, puis repos jusqu\'à la minute suivante. 4 tours de : 1) 12 pompes, 2) 15 goblet squats, 3) 10 rowings haltère par bras, 4) 10 fentes par jambe, 5) 40 s de planche.', timer: { mode: 'interval', work: 60, rest: 0, rounds: 20, label: 'EMOM' } },
-      { name: 'Étirements', detail: 'Hanches, pectoraux, nuque. 2 min.' },
+      WARMUP_GYM(180, 'Jumping jacks, cercles de bras, squats au poids du corps.'),
+      {
+        name: 'EMOM 20 min', info: ['pompes', 'goblet-squat', 'rowing-haltere', 'fentes-marchees', 'planche'], sets: 4, rest: 0,
+        note: 'Chaque minute, fais l\'exercice puis récupère jusqu\'à la minute suivante.',
+        circuit: [
+          { name: 'Pompes', label: '12 pompes', work: 60, timed: true, info: 'pompes' },
+          { name: 'Goblet squat', label: '15 goblet squats', work: 60, timed: true, info: 'goblet-squat' },
+          { name: 'Rowing haltère', label: '10 rowings haltère par bras', work: 60, timed: true, info: 'rowing-haltere' },
+          { name: 'Fentes', label: '10 fentes par jambe', work: 60, timed: true, info: 'fentes-marchees' },
+          { name: 'Planche', label: '40 s de planche', work: 60, timed: true, info: 'planche' },
+        ],
+      },
+      { name: 'Étirements', info: 'etirements', work: 120, timed: true, note: 'Hanches, pectoraux, nuque.' },
     ],
   },
   expressCourse: {
-    type: 'cardio', title: 'Course express', duration: '25 min', run: true,
+    type: 'cardio', title: 'Course express', run: true, restAfter: 0,
     build: () => [
-      { name: 'Footing d\'échauffement', detail: '7 min très facile.', timer: { mode: 'countdown', seconds: 420, label: 'Échauffement' } },
-      { name: '30/30', detail: '10 × (30 s vite / 30 s trot). Pas le temps de sortir ? Remplace par 2 tabatas : montées de genoux puis squats sautés.', timer: { mode: 'interval', work: 30, rest: 30, rounds: 10, label: '30/30' } },
-      { name: 'Retour au calme', detail: '5 min de marche ou de footing lent.', timer: { mode: 'countdown', seconds: 300, label: 'Retour au calme' } },
+      { name: 'Footing d\'échauffement', info: 'course-endurance', work: 420, timed: true, note: 'Très facile.' },
+      { name: '30/30', info: 'fractionne-30-30', label: '30/30', inner: { work: 30, rest: 30, rounds: 10 }, note: 'Pas le temps de sortir ? Remplace par des montées de genoux sur place.' },
+      { name: 'Retour au calme', info: 'course-endurance', work: 300, timed: true, note: 'Marche ou footing lent.' },
     ],
   },
 };
@@ -348,7 +475,7 @@ export function adapt(state, log) {
   if (a[log.type] < before) msgs.push(`${TYPES[log.type].label} : volume allégé pour les prochaines séances.`);
 
   if (log.type === 'escalade' && !log.home) {
-    const recent = state.logs.filter((l) => l.type === 'escalade').slice(-2);
+    const recent = state.logs.filter((l) => l.type === 'escalade' && !l.home).slice(-2);
     if (log.pain) {
       a.gradeIdx = clamp(a.gradeIdx - 1, 1, GRADES.length - 2);
       msgs.push(`Douleur signalée : niveau cible abaissé à ${grade(a.gradeIdx)}. Si elle persiste, repos et avis médical.`);

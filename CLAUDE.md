@@ -7,6 +7,8 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - `index.html`, `css/styles.css` : coquille et styles (thème clair/sombre via variables CSS).
 - `js/program.js` : modèles de séances, répartition 3/4/5 séances, cycle de 4 semaines (reprise, construction, intensification, décharge), règles d'adaptation. Logique pure, testée.
 - `js/timer.js` : chrono, minuteur, intervalles (calcul par horodatage), son et vibration.
+- `js/guided.js` : séance guidée (`buildSteps` transforme une séance en étapes, `GuidedRunner` les enchaîne).
+- `js/guides.js` : fiches tuto des exercices (consignes, erreurs, recherche vidéo YouTube). Chaque `info` d'exercice doit pointer vers une fiche existante.
 - `js/app.js` : rendu des vues et événements (délégation par `data-*`).
 - `js/charts.js` : graphiques SVG faits main. `js/calendar.js` : liens Google Agenda et export .ics.
 - `js/store.js` : état dans `localStorage` (clé `personnal-trainer:v1`).
@@ -17,6 +19,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Aucune dépendance ni étape de build : modules ES servis tels quels. Garder ça.
 - Accès salle (`settings.access`) : sans abonnement, `resolveKey` remplace les séances par leurs versions maison (`*Maison`). Le mode express (`state.express`) remplace une séance par une version de 20 à 30 min à la maison. Pas de dips à la maison.
 - Précautions santé d'Hugo : pas de poutre avant la semaine 5, mobilité nuque et dos à chaque séance d'escalade, éviter l'escalade deux jours de suite.
+- Les exercices sont structurés (`sets`, `reps`, `work`, `timed`, `rest`, `inner`, `circuit`, `restAfter`, voir l'en-tête des modèles dans `program.js`) : le texte, le chrono ⏱, la durée totale et la séance guidée en sont déduits. Ne pas écrire les repos en dur dans les notes.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 
 ## Commandes

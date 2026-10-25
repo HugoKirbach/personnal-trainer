@@ -18,6 +18,19 @@ function beep(freq = 880, ms = 150, when = 0) {
   } catch { /* son indisponible */ }
 }
 
+// Signal sonore et vibration : count (3, 2, 1), work (début d'effort), rest, end.
+export function signal(kind, opts) {
+  if (opts.sound()) {
+    if (kind === 'count') beep(660, 120);
+    else if (kind === 'work') beep(990, 250);
+    else if (kind === 'end') { beep(880, 200); beep(880, 200, 0.3); beep(1180, 450, 0.6); }
+    else beep(520, 300);
+  }
+  if (opts.vibrate() && navigator.vibrate) {
+    navigator.vibrate(kind === 'count' ? 80 : kind === 'end' ? [300, 150, 300, 150, 600] : [250, 100, 250]);
+  }
+}
+
 export function unlockAudio() {
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
@@ -103,15 +116,7 @@ export class Timer {
   }
 
   signal(kind) {
-    if (this.opts.sound()) {
-      if (kind === 'count') beep(660, 120);
-      else if (kind === 'work') { beep(990, 250); }
-      else if (kind === 'end') { beep(880, 200); beep(880, 200, 0.3); beep(1180, 450, 0.6); }
-      else beep(520, 300);
-    }
-    if (this.opts.vibrate() && navigator.vibrate) {
-      navigator.vibrate(kind === 'count' ? 80 : kind === 'end' ? [300, 150, 300, 150, 600] : [250, 100, 250]);
-    }
+    signal(kind, this.opts);
   }
 
   tick() {

@@ -13,6 +13,8 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 ## Fonctionnalités
 
 - **Aujourd'hui** : la séance du jour, exercices à cocher, chrono en un appui, conseil du jour, puis ressenti (Facile / OK / Dur), course terminée ou non, cotation max, douleur.
+- **Séance guidée** : un seul chrono pour toute la séance, avec décompte, exercice en cours en grand, exercice suivant et temps restant.
+- **Tutos** : un bouton « i » par exercice ouvre les consignes, les erreurs à éviter et des vidéos de démonstration.
 - **Semaine** : le planning, avec la possibilité de déplacer une séance.
 - **Chrono** : chronomètre avec tours, minuteur de repos, intervalles (poutre, tabata, 30/30, gainage), son et vibration, écran maintenu allumé.
 - **Suivi** : séances par semaine, ressenti, progression en voie vers le 7a, historique.

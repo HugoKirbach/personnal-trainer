@@ -1,10 +1,12 @@
 import {
-  DAYS, GRADES, TYPES, SCHEDULES, adapt, buildSession, mondayOf, parseYmd, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
+  DAYS, GRADES, TYPES, SCHEDULES, adapt, buildSession, fmtDuration, mondayOf, parseYmd, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
 } from './program.js';
 import { load, save, defaults } from './store.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
 import { weeklyBars, feelingDots, gradeLine, bindTooltips } from './charts.js';
 import { downloadIcs, googleLink } from './calendar.js';
+import { GuidedRunner } from './guided.js';
+import { GUIDES, videoUrl } from './guides.js';
 
 let state = load();
 let view = 'today';
@@ -35,13 +37,80 @@ function releaseWake() {
   wakeLock = null;
 }
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && timer.running) { requestWake(); timer.tick(); }
+  if (document.hidden) return;
+  if (timer.running) { requestWake(); timer.tick(); }
+  if (guided?.running) { requestWake(); guided.tick(); }
 });
 
 function loadTimer(cfg) {
   timer.reset(cfg);
   releaseWake();
   go('timer');
+}
+
+// ---------- Séance guidée ----------
+let guided = null;
+let guidedId = null;
+let guidedView = null;
+
+function findSession(id) {
+  const [date, idx] = id.split('#');
+  return weekSessions(mondayOf(parseYmd(date)), state).find((x) => x.index === Number(idx));
+}
+
+function startGuided(id) {
+  guided?.stop();
+  const s = findSession(id);
+  guidedId = id;
+  guidedView = null;
+  guided = new GuidedRunner(s, (v) => { guidedView = v; if (view === 'guided') paintGuided(); }, {
+    sound: () => state.settings.sound,
+    vibrate: () => state.settings.vibrate,
+    onExerciseDone: (i) => {
+      const list = new Set(state.checks[id] || []);
+      list.add(i);
+      state.checks[id] = [...list];
+      save(state);
+    },
+    onFinish: () => {
+      releaseWake();
+      notify('Séance terminée 💪', 'Pense à noter ton ressenti.', 'timer');
+    },
+  });
+  go('guided');
+  guided.start();
+  requestWake();
+}
+
+function quitGuided() {
+  guided?.stop();
+  releaseWake();
+  const id = guidedId;
+  guided = null;
+  guidedId = null;
+  const [date, idx] = id.split('#');
+  if (date === ymd(new Date())) return go('today');
+  view = 'week';
+  openSession = { date, index: Number(idx) };
+  render();
+  window.scrollTo(0, 0);
+}
+
+// ---------- Fiches tuto ----------
+function openGuide(ids) {
+  const list = ids.split(',').map((k) => GUIDES[k]).filter(Boolean);
+  if (!list.length) return;
+  $('#sheet-body').innerHTML = list.map((g) => `<section class="guide">
+      <h2>${esc(g.title)}</h2>
+      <h3>Comment faire</h3>
+      <ol>${g.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+      <h3>Erreurs à éviter</h3>
+      <ul>${g.errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${g.tip ? `<p class="tip">💡 ${esc(g.tip)}</p>` : ''}
+      <a class="btn video" href="${videoUrl(g)}" target="_blank" rel="noopener">▶ Voir des vidéos de démonstration</a>
+    </section>`).join('');
+  $('#sheet').hidden = false;
+  $('#sheet .sheet-card').scrollTop = 0;
 }
 
 // ---------- Notifications ----------
@@ -103,14 +172,16 @@ function toast(msg, ms = 3500) {
 }
 
 function render() {
+  document.body.classList.toggle('guided-mode', view === 'guided');
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.go === view));
   const info = weekInfo(new Date(), state.settings.startDate);
   $('#week-badge').textContent = `Semaine ${info.week} · ${info.phase.name}`;
   const main = $('#main');
   main.innerHTML = {
-    today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings,
+    today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings, guided: renderGuided,
   }[view]();
   if (view === 'timer') paintTimer();
+  if (view === 'guided') paintGuided();
 }
 
 // ---------- Aujourd'hui ----------
@@ -157,17 +228,24 @@ function sessionCard(s) {
   return `<section class="card session" style="--accent:${TYPES[s.type].color}">
     <div class="session-head">
       <span><span class="pill">${TYPES[s.type].label}</span>${s.home ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
-      <span class="muted">${slotLabel(s.slot)} · ${s.time} · ${s.duration}</span>
+      <span class="muted">${slotLabel(s.slot)} · ${s.time}</span>
     </div>
     <h2>${esc(s.title)}</h2>
+    <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
     <p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>
+    ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
     <p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>
+    <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
     ${log ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
-          <span><strong>${esc(e.name)}</strong><br><span class="small">${esc(e.detail)}</span></span></label>
-        ${e.timer ? `<button class="icon-btn" data-timer='${esc(JSON.stringify(e.timer))}' aria-label="Lancer le chrono">⏱</button>` : ''}
+          <span><strong>${esc(e.name)}</strong><br><span class="small">${esc(e.detail)}</span>
+          <span class="ex-meta">≈ ${fmtDuration(e.seconds)}${e.restAfter ? ` · puis ${fmtDuration(e.restAfter)} de repos avant l'exercice suivant` : ''}</span></span></label>
+        <span class="ex-actions">
+          ${e.info ? `<button class="icon-btn info-btn" data-info="${[].concat(e.info).join(',')}" aria-label="Tuto : ${esc(e.name)}">i</button>` : ''}
+          ${e.timer ? `<button class="icon-btn" data-timer='${esc(JSON.stringify(e.timer))}' aria-label="Lancer le chrono">⏱</button>` : ''}
+        </span>
       </li>`).join('')}
     </ol>
     ${log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}
@@ -262,7 +340,10 @@ function renderWeek() {
 // ---------- Chrono ----------
 function renderTimer() {
   const mode = timer.cfg.mode;
-  return `<div class="seg tabs" role="tablist">
+  const todays = sessionsOn(new Date(), state);
+  return `${guided && !guided.done ? `<button class="primary guided-btn" data-action="resume-guided">▶ Reprendre la séance guidée</button>`
+    : todays.map((s) => `<button class="primary guided-btn" data-guided="${s.date}#${s.index}">▶ Séance guidée : ${esc(s.title)} (${s.duration})</button>`).join('')}
+    <div class="seg tabs" role="tablist">
       ${[['stopwatch', 'Chrono'], ['countdown', 'Minuteur'], ['interval', 'Intervalles']].map(([m, l]) => `<button data-tmode="${m}" class="${mode === m ? 'active' : ''}">${l}</button>`).join('')}
     </div>
     <div class="timer-face" id="tface">
@@ -308,6 +389,63 @@ function paintTimer() {
 
 function updateTimerBadge(running) {
   $('nav [data-go="timer"]')?.classList.toggle('running', running);
+}
+
+function renderGuided() {
+  return `<div class="guided" id="guided">
+      <div class="g-top">
+        <div><span class="g-caption">Temps restant</span><strong id="g-total" class="g-total"></strong></div>
+        <button class="icon-btn" data-g="quit" id="g-quit" aria-label="Quitter la séance">✕</button>
+      </div>
+      <div class="g-progress"><i id="g-bar"></i></div>
+      <div class="g-main">
+        <div id="g-kind" class="g-kind"></div>
+        <h1 id="g-title" class="g-title"></h1>
+        <div id="g-sub" class="g-sub"></div>
+        <div id="g-time" class="g-time"></div>
+        <div id="g-hint" class="g-hint"></div>
+        <button class="link" id="g-info" data-info="">ⓘ Comment faire cet exercice</button>
+      </div>
+      <div class="g-next"><span class="g-caption">Ensuite</span><div id="g-next"></div></div>
+      <div class="g-controls">
+        <button data-g="prev" aria-label="Étape précédente">⏮</button>
+        <button data-g="toggle" id="g-toggle" class="primary big">Pause</button>
+        <button data-g="next" id="g-nextbtn">⏭</button>
+      </div>
+    </div>`;
+}
+
+function paintGuided() {
+  const v = guidedView;
+  const root = $('#guided');
+  if (!root || !v) return;
+  if (v.done) {
+    root.dataset.kind = 'done';
+    root.innerHTML = `<div class="g-main g-end">
+        <div class="g-kind">Bravo</div>
+        <h1 class="g-title">Séance terminée 💪</h1>
+        <p class="g-sub">Note ton ressenti pour que le programme s'adapte.</p>
+        <button class="primary big" data-g="quit">Noter la séance</button>
+      </div>`;
+    return;
+  }
+  const st = v.step;
+  root.dataset.kind = st.kind;
+  $('#g-total').textContent = fmt(v.remainingTotal);
+  $('#g-bar').style.width = `${Math.max(0, Math.min(1, v.progress)) * 100}%`;
+  $('#g-kind').textContent = st.kind === 'prep' ? 'Prépare-toi' : st.kind === 'rest' ? 'Repos' : 'C\'est parti';
+  $('#g-title').textContent = st.title;
+  $('#g-sub').textContent = st.sub || '';
+  const over = v.remaining < 0;
+  $('#g-time').textContent = over ? `+${fmt(-v.remaining)}` : fmt(v.remaining);
+  $('#g-time').classList.toggle('over', over);
+  $('#g-hint').textContent = st.timed ? '' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
+  const info = st.info ? [].concat(st.info).join(',') : '';
+  $('#g-info').hidden = !info;
+  $('#g-info').dataset.info = info;
+  $('#g-next').textContent = v.next;
+  $('#g-toggle').textContent = v.running ? 'Pause' : 'Reprendre';
+  $('#g-nextbtn').textContent = st.timed ? '⏭' : '✓ Fait';
 }
 
 // ---------- Suivi ----------
@@ -401,6 +539,24 @@ document.addEventListener('click', async (e) => {
   const d = t.dataset;
   if (d.go) return go(d.go);
   if (d.timer) return loadTimer(JSON.parse(d.timer));
+  if (d.info !== undefined && d.info) return openGuide(d.info);
+  if (d.action === 'close-sheet') { $('#sheet').hidden = true; return; }
+  if (d.guided) return startGuided(d.guided);
+  if (d.action === 'resume-guided') return go('guided');
+  if (d.g === 'toggle') {
+    if (guided.running) { guided.pause(); releaseWake(); } else { guided.start(); requestWake(); }
+    return;
+  }
+  if (d.g === 'next') return guided.next();
+  if (d.g === 'prev') return guided.prev();
+  if (d.g === 'quit') {
+    if (guided.done || t.dataset.confirm) return quitGuided();
+    t.dataset.confirm = '1';
+    t.textContent = 'Quitter ?';
+    t.classList.add('confirm');
+    setTimeout(() => { delete t.dataset.confirm; t.textContent = '✕'; t.classList.remove('confirm'); }, 3000);
+    return;
+  }
   if (d.preset) return loadTimer(PRESETS[d.preset].cfg);
   if (d.tmode) {
     const m = d.tmode;
@@ -509,6 +665,8 @@ document.addEventListener('submit', (e) => {
     persist(); render(); toast('Réglages enregistrés.');
   }
 });
+
+$('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') e.currentTarget.hidden = true; });
 
 // ---------- Démarrage ----------
 bindTooltips(document.body);

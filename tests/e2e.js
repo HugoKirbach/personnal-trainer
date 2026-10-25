@@ -17,7 +17,7 @@ const check = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 try {
   // Démarre le programme un lundi connu, avec une séance de bloc aujourd'hui.
-  await page.clock.setFixedTime(new Date('2026-10-28T18:30:00'));
+  await page.clock.install({ time: new Date('2026-10-28T18:30:00') });
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForSelector('.session');
   check((await page.textContent('#week-badge')).includes('Semaine 1'), 'badge de semaine');
@@ -37,11 +37,37 @@ try {
   await page.click('[data-form="settings"] button.primary');
   await page.click('nav [data-go="today"]');
   check((await page.textContent('.session h2')).includes('Escalade bloc'), 'avec abonnement : séance de bloc');
+  check(/au total/.test(await page.textContent('.session .total')), 'temps total affiché');
+  check((await page.textContent('.ex-meta >> nth=0')).includes('de repos avant l\'exercice suivant'), 'repos entre exercices affiché');
   await shot('1-aujourdhui');
+
+  // Fiche tuto d'un exercice.
+  await page.click('.info-btn >> nth=1');
+  check(await page.isVisible('#sheet'), 'fiche tuto ouverte');
+  check((await page.getAttribute('#sheet .video', 'href')).includes('youtube.com/results'), 'lien vers les vidéos');
+  await shot('1b-tuto');
+  await page.click('.sheet-close');
+  check(!(await page.isVisible('#sheet')), 'fiche tuto fermée');
+
+  // Séance guidée : décompte, puis enchaînement automatique.
+  await page.click('[data-guided]');
+  await page.waitForSelector('.guided');
+  check((await page.textContent('#g-kind')).includes('Prépare'), 'décompte de départ');
+  check(!(await page.isVisible('nav')), 'navigation masquée pendant la séance guidée');
+  await page.clock.runFor(11000);
+  check((await page.textContent('#g-title')).includes('Inclinaisons de nuque'), 'premier exercice après le décompte');
+  check((await page.textContent('#g-next')).length > 3, 'exercice suivant affiché');
+  check(/^\d\d:\d\d$/.test(await page.textContent('#g-total')), 'temps global restant');
+  await shot('1c-guidee');
+  await page.click('#g-toggle');
+  check((await page.textContent('#g-toggle')) === 'Reprendre', 'pause');
+  await page.click('#g-quit');
+  await page.click('#g-quit');
+  await page.waitForSelector('.session');
 
   // Coche un exercice et lance le chrono depuis la séance.
   await page.check('.exercises input[type=checkbox] >> nth=0');
-  await page.click('.exercises [data-timer] >> nth=1');
+  await page.click('.exercises [data-timer] >> nth=2');
   await page.waitForSelector('.timer-face');
   check((await page.textContent('#tdisplay')) === '03:00', 'minuteur de repos chargé à 3 min');
   await shot('2-chrono');

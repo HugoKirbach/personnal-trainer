@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
+import { durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -50,8 +50,9 @@ test('pas de poutre avant la semaine 5', () => {
   const st = baseState();
   const early = buildSession('bloc', parseYmd('2026-11-04'), st);
   const later = buildSession('bloc', parseYmd('2026-11-25'), st);
-  assert.ok(!early.exercises.some((e) => e.timer?.label === 'Poutre'));
-  assert.ok(later.exercises.some((e) => e.timer?.label === 'Poutre'));
+  assert.ok(!early.exercises.some((e) => e.info === 'poutre'));
+  assert.ok(later.exercises.some((e) => e.info === 'poutre'));
+  assert.ok(early.notes.some((n) => n.includes('poutre')));
 });
 
 test('un déplacement ne touche que la semaine concernée', () => {
@@ -135,4 +136,32 @@ test('une séance d\'escalade maison ne change pas le niveau cible', () => {
   const st = baseState();
   for (let i = 0; i < 3; i++) { const l = { type: 'escalade', feeling: 'facile', completed: true, home: true }; st.logs.push(l); adapt(st, l); }
   assert.equal(st.adapt.gradeIdx, 3);
+});
+
+test('chaque exercice a une durée, un repos avant le suivant et une fiche tuto valide', async () => {
+  const { GUIDES } = await import('../js/guides.js');
+  const st = baseState();
+  for (const key of TEMPLATE_KEYS) {
+    for (const d of ['2026-10-27', '2026-11-25']) {
+      const s = buildSession(key, parseYmd(d), st);
+      assert.ok(s.totalSeconds > 0 && s.duration, key);
+      s.exercises.forEach((e, i) => {
+        assert.ok(e.seconds > 0, `${key} : ${e.name}`);
+        if (i === s.exercises.length - 1) assert.equal(e.restAfter, 0);
+        [].concat(e.info || []).forEach((id) => assert.ok(GUIDES[id], `fiche manquante : ${id}`));
+        (e.circuit || []).forEach((c) => [].concat(c.info || []).forEach((id) => assert.ok(GUIDES[id], `fiche manquante : ${id}`)));
+      });
+      const total = s.exercises.reduce((t, e) => t + e.seconds + e.restAfter, 0);
+      assert.equal(total, s.totalSeconds);
+    }
+  }
+});
+
+test('format des durées', () => {
+  assert.equal(fmtDuration(45), '45 s');
+  assert.equal(fmtDuration(90), '1 min 30');
+  assert.equal(fmtDuration(120), '2 min');
+  assert.equal(durationLabel(65 * 60), '1h05');
+  assert.equal(durationLabel(60 * 60), '1h');
+  assert.equal(durationLabel(47 * 60), '45 min');
 });
