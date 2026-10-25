@@ -20,6 +20,7 @@ export function defaults() {
     moves: {},
     checks: {},
     express: {},
+    benchmarks: [],
   };
 }
 

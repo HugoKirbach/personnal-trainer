@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -164,4 +164,57 @@ test('format des durées', () => {
   assert.equal(durationLabel(65 * 60), '1h05');
   assert.equal(durationLabel(60 * 60), '1h');
   assert.equal(durationLabel(47 * 60), '45 min');
+});
+
+test('les séances maison n\'utilisent qu\'un seul haltère de 10 kg max et un gilet de 8 kg max', () => {
+  const st = homeState();
+  st.benchmarks = [{ date: '2026-10-25', pullups: 25, pushups: 60 }];
+  for (const key of TEMPLATE_KEYS) {
+    for (const express of [false, true]) {
+      const s = buildSession(key, parseYmd('2026-12-02'), st, express);
+      if (!s.home) continue;
+      s.exercises.forEach((e) => {
+        const text = `${e.name} ${e.detail}`;
+        assert.ok(!/haltères/i.test(text), `${s.variant} : ${text}`);
+        for (const m of text.matchAll(/(\d+) kg/g)) assert.ok(Number(m[1]) <= 10, `${s.variant} : ${text}`);
+        for (const m of text.matchAll(/gilet à (\d+) kg/g)) assert.ok(Number(m[1]) >= 4 && Number(m[1]) <= 8, text);
+      });
+    }
+  }
+});
+
+test('la prise de référence adapte répétitions, charges et allures', () => {
+  const st = homeState();
+  const before = buildSession('blocMaison', parseYmd('2026-10-28'), st);
+  assert.ok(before.exercises.some((e) => e.name === 'Tractions' && e.reps === '5 à 8'));
+  st.benchmarks = [{ date: '2026-10-25', pullups: 8, hang: 50, gripper: 40, plank: 100, squat: 30, pushups: 20, cooper: 2600 }];
+  const after = buildSession('blocMaison', parseYmd('2026-10-28'), st);
+  assert.ok(after.exercises.some((e) => e.name === 'Tractions' && e.reps === '4 à 6'));
+  assert.equal(after.exercises.find((e) => e.name === 'Suspensions actives').work, 25);
+  assert.match(after.exercises.find((e) => e.info === 'pince').detail, /28 kg/);
+  const p = prescriptions(latestBench(st));
+  assert.equal(p.plank, 60);
+  assert.equal(p.squatReps, 18);
+  assert.equal(vmaFromCooper(2600), 13.4);
+  assert.match(buildSession('fractionne', parseYmd('2026-10-28'), st).exercises[1].detail, /13,4 km\/h/);
+  st.benchmarks.push({ date: '2026-11-22', pullups: 12 });
+  const strong = buildSession('blocMaison', parseYmd('2026-11-25'), st);
+  assert.ok(strong.exercises.some((e) => e.name === 'Tractions lestées'));
+  assert.equal(latestBench(st).hang, 50, 'un test sauté garde l\'ancienne valeur');
+});
+
+test('rappel de prise de référence toutes les 4 semaines', () => {
+  const st = homeState();
+  assert.equal(benchDue(st, parseYmd('2026-10-25')).due, true);
+  st.benchmarks = [{ date: '2026-10-25', pullups: 8 }];
+  assert.equal(benchDue(st, parseYmd('2026-11-10')).due, false);
+  assert.equal(benchDue(st, parseYmd('2026-11-10')).inDays, 12);
+  assert.equal(benchDue(st, parseYmd('2026-11-22')).due, true);
+});
+
+test('la séance de référence contient tous les tests', () => {
+  const r = referenceSession(parseYmd('2026-10-25'), homeState());
+  const tests = r.exercises.map((e) => e.test).filter(Boolean);
+  assert.deepEqual(tests, ['pushups', 'pullups', 'hang', 'gripper', 'plank', 'squat', 'cooper']);
+  assert.equal(r.index, 'ref');
 });

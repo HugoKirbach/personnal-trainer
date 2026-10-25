@@ -13,6 +13,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
 const shots = process.env.SHOTS;
 const shot = async (name) => { if (shots) await page.screenshot({ path: `${shots}/${name}.png`, fullPage: true }); };
+const PLAN = 'section.session:not(.ref-session)';
 const check = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 try {
@@ -21,14 +22,14 @@ try {
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForSelector('.session');
   check((await page.textContent('#week-badge')).includes('Semaine 1'), 'badge de semaine');
-  check((await page.textContent('.session h2')).includes('Force grimpe à la maison'), 'sans abonnement : séance maison');
+  check((await page.textContent(`${PLAN} h2`)).includes('Force grimpe à la maison'), 'sans abonnement : séance maison');
   await shot('0-maison');
 
   // Version express puis retour à la séance prévue.
-  await page.click('[data-express]');
-  check((await page.textContent('.session h2')).includes('Express'), 'version express');
+  await page.click(`${PLAN} [data-express]`);
+  check((await page.textContent(`${PLAN} h2`)).includes('Express'), 'version express');
   await shot('0b-express');
-  await page.click('[data-express]');
+  await page.click(`${PLAN} [data-express]`);
 
   // Active les accès en salle.
   await page.click('nav [data-go="settings"]');
@@ -36,10 +37,20 @@ try {
   await page.check('input[name=accessMuscu]');
   await page.click('[data-form="settings"] button.primary');
   await page.click('nav [data-go="today"]');
-  check((await page.textContent('.session h2')).includes('Escalade bloc'), 'avec abonnement : séance de bloc');
-  check(/au total/.test(await page.textContent('.session .total')), 'temps total affiché');
+  check((await page.textContent(`${PLAN} h2`)).includes('Escalade bloc'), 'avec abonnement : séance de bloc');
+  check(/au total/.test(await page.textContent(`${PLAN} .total`)), 'temps total affiché');
   check((await page.textContent('.ex-meta >> nth=0')).includes('de repos avant l\'exercice suivant'), 'repos entre exercices affiché');
   await shot('1-aujourdhui');
+
+  // Prise de référence : saisie des résultats et adaptation.
+  check(await page.isVisible('.ref-wrap[open]'), 'prise de référence proposée');
+  await page.fill('[data-form="bench"] input[name=pullups]', '8');
+  await page.fill('[data-form="bench"] input[name=hang]', '50');
+  await page.fill('[data-form="bench"] input[name=gripper]', '40');
+  await page.click('[data-form="bench"] button.primary');
+  await page.waitForSelector('.bench-summary');
+  check((await page.textContent('#toast')).includes('Pince : 28 kg'), 'résumé de l\'adaptation');
+  await shot('0c-reference');
 
   // Fiche tuto d'un exercice.
   await page.click('.info-btn >> nth=1');
@@ -50,7 +61,7 @@ try {
   check(!(await page.isVisible('#sheet')), 'fiche tuto fermée');
 
   // Séance guidée : décompte, puis enchaînement automatique.
-  await page.click('[data-guided]');
+  await page.click(`${PLAN} [data-guided]`);
   await page.waitForSelector('.guided');
   check((await page.textContent('#g-kind')).includes('Prépare'), 'décompte de départ');
   check(!(await page.isVisible('nav')), 'navigation masquée pendant la séance guidée');
@@ -67,7 +78,7 @@ try {
 
   // Coche un exercice et lance le chrono depuis la séance.
   await page.check('.exercises input[type=checkbox] >> nth=0');
-  await page.click('.exercises [data-timer] >> nth=2');
+  await page.click(`${PLAN} .exercises [data-timer] >> nth=2`);
   await page.waitForSelector('.timer-face');
   check((await page.textContent('#tdisplay')) === '03:00', 'minuteur de repos chargé à 3 min');
   await shot('2-chrono');
@@ -78,10 +89,10 @@ try {
 
   // Note la séance et vérifie l'adaptation.
   await page.click('nav [data-go="today"]');
-  await page.click('.feedback .seg label:has-text("Facile")');
-  await page.selectOption('.feedback select[name=maxGrade]', '6b+');
-  await page.click('.feedback button.primary');
-  await page.waitForSelector('.logged');
+  await page.click('[data-form="log"] .seg label:has-text("Facile")');
+  await page.selectOption('[data-form="log"] select[name=maxGrade]', '6b+');
+  await page.click('[data-form="log"] button.primary');
+  await page.waitForSelector(`${PLAN} .logged`);
   check((await page.textContent('#toast')).includes('enregistrée'), 'toast de confirmation');
 
   // Semaine : déplacer une séance.
@@ -95,6 +106,7 @@ try {
   await page.click('nav [data-go="stats"]');
   check((await page.$$('svg.chart')).length >= 3, 'graphiques affichés');
   check((await page.textContent('.tiles')).includes('6b+'), 'niveau cible relevé par la cotation max');
+  check((await page.textContent('.table-scroll')).includes('Tractions max'), 'tableau des références');
   await shot('4-suivi');
 
   // Réglages : passer à 5 séances.

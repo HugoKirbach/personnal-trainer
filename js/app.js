@@ -1,5 +1,6 @@
 import {
-  DAYS, GRADES, TYPES, SCHEDULES, adapt, buildSession, fmtDuration, mondayOf, parseYmd, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
+  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, adapt, benchDue, benchSummary, buildSession, fmtDuration, mondayOf, parseYmd,
+  referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
 } from './program.js';
 import { load, save, defaults } from './store.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
@@ -12,6 +13,8 @@ let state = load();
 let view = 'today';
 let weekOffset = 0;
 let openSession = null; // { date, index } affiché en détail depuis la semaine
+let refOpen = false; // bloc « prise de référence » déplié
+let editBench = null; // date des résultats de référence en cours de modification
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const persist = () => { save(state); writePlan(); };
@@ -55,6 +58,7 @@ let guidedView = null;
 
 function findSession(id) {
   const [date, idx] = id.split('#');
+  if (idx === 'ref') return referenceSession(parseYmd(date), state);
   return weekSessions(mondayOf(parseYmd(date)), state).find((x) => x.index === Number(idx));
 }
 
@@ -63,6 +67,7 @@ function startGuided(id) {
   const s = findSession(id);
   guidedId = id;
   guidedView = null;
+  if (s.reference) refOpen = true;
   guided = new GuidedRunner(s, (v) => { guidedView = v; if (view === 'guided') paintGuided(); }, {
     sound: () => state.settings.sound,
     vibrate: () => state.settings.vibrate,
@@ -190,6 +195,13 @@ function renderToday() {
   const list = sessionsOn(now, state);
   const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   let html = `<h1 class="cap">${dateLabel}</h1>`;
+  const due = benchDue(state, now);
+  const refBlock = `<details class="card ref-wrap" ${due.due || refOpen ? 'open' : ''}>
+      <summary>📏 Prise de référence ${due.due ? '<span class="pill due">À faire</span>' : `<span class="muted small">· prochaine dans ${due.inDays} j</span>`}</summary>
+      <p class="small muted">Toutes les 4 semaines : tes résultats recalculent répétitions, charges et allures de tes séances.</p>
+      ${sessionCard(referenceSession(now, state))}
+    </details>`;
+  if (due.due) html += refBlock;
   if (!list.length) {
     const next = nextSession(now);
     html += `<section class="card rest"><h2>Jour de repos</h2><p>Récupère bien : marche, mobilité douce de la nuque et du dos, hydratation.</p>
@@ -197,6 +209,7 @@ function renderToday() {
       <p class="tip">💡 ${esc(tipFor('general'))}</p></section>`;
   }
   list.forEach((s) => { html += sessionCard(s); });
+  if (!due.due) html += refBlock;
   html += `<details class="card"><summary>Noter une séance hors programme</summary>
     <form data-form="extra" class="stack">
       <label>Type <select name="type">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('')}</select></label>
@@ -225,18 +238,18 @@ function sessionCard(s) {
   const done = state.checks[id] || [];
   const log = logFor(s);
   const hasRun = s.run;
-  return `<section class="card session" style="--accent:${TYPES[s.type].color}">
+  return `<section class="card session${s.reference ? ' ref-session' : ''}" style="--accent:${TYPES[s.type].color}">
     <div class="session-head">
-      <span><span class="pill">${TYPES[s.type].label}</span>${s.home ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
-      <span class="muted">${slotLabel(s.slot)} · ${s.time}</span>
+      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
+      <span class="muted">${s.reference ? 'Quand tu veux' : `${slotLabel(s.slot)} · ${s.time}`}</span>
     </div>
     <h2>${esc(s.title)}</h2>
     <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
-    <p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>
+    ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
-    <p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>
+    ${s.reference ? '' : `<p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
-    ${log ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
+    ${log || s.reference ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
@@ -248,7 +261,7 @@ function sessionCard(s) {
         </span>
       </li>`).join('')}
     </ol>
-    ${log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}
+    ${s.reference ? benchForm(s.date) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
         <h3>Comment ça s'est passé ?</h3>
@@ -256,6 +269,27 @@ function sessionCard(s) {
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
+}
+
+const UNIT_SHORT = { répétitions: 'rép.', secondes: 's', kg: 'kg', mètres: 'm' };
+
+function benchForm(date) {
+  const bench = (state.benchmarks || []).find((b) => b.date === date);
+  const summary = benchSummary(state);
+  const summaryHtml = summary.length ? `<h3>Ce que ça change dans tes séances</h3><ul class="small bench-summary">${summary.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+  if (bench && editBench !== date) {
+    return `<div class="logged">✓ Résultats du ${parseYmd(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} enregistrés
+        <button class="link" data-bench-edit="${date}">Modifier</button></div>${summaryHtml}`;
+  }
+  return `<form data-form="bench" data-date="${date}" class="stack feedback">
+      <h3>Tes résultats</h3>
+      <div class="grid2">
+        ${BENCH_TESTS.map((t) => `<label>${t.label}${t.optional ? ' (optionnel)' : ''}
+          <span class="unit-input"><input type="number" inputmode="numeric" min="0" step="1" name="${t.key}" value="${bench?.[t.key] ?? ''}"><span>${UNIT_SHORT[t.unit]}</span></span></label>`).join('')}
+      </div>
+      <p class="small muted">Laisse vide un test que tu n'as pas fait : l'ancienne valeur est gardée.</p>
+      <button class="primary">Enregistrer et adapter mes séances</button>
+    </form>`;
 }
 
 function feedbackFields(id, free, type, hasRun) {
@@ -436,10 +470,10 @@ function paintGuided() {
   $('#g-kind').textContent = st.kind === 'prep' ? 'Prépare-toi' : st.kind === 'rest' ? 'Repos' : 'C\'est parti';
   $('#g-title').textContent = st.title;
   $('#g-sub').textContent = st.sub || '';
-  const over = v.remaining < 0;
-  $('#g-time').textContent = over ? `+${fmt(-v.remaining)}` : fmt(v.remaining);
+  const over = v.remaining < 0 && !st.countUp;
+  $('#g-time').textContent = st.countUp ? fmt(st.dur * 1000 - v.remaining) : over ? `+${fmt(-v.remaining)}` : fmt(v.remaining);
   $('#g-time').classList.toggle('over', over);
-  $('#g-hint').textContent = st.timed ? '' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
+  $('#g-hint').textContent = st.countUp ? 'Effort maximal : appuie sur ✓ à la fin et retiens ton résultat.' : st.timed ? '' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
   const info = st.info ? [].concat(st.info).join(',') : '';
   $('#g-info').hidden = !info;
   $('#g-info').dataset.info = info;
@@ -471,6 +505,7 @@ function renderStats() {
       <table class="table"><tbody>
         ${Object.keys(TYPES).map((t) => `<tr><td><i class="dot" style="background:${TYPES[t].color}"></i>${TYPES[t].label}</td><td class="num">${pct(a[t])}</td></tr>`).join('')}
       </tbody></table></section>
+    <section class="card"><h2>Prises de référence</h2>${benchTable()}</section>
     <section class="card"><h2>Historique</h2>
       ${logs.length ? `<table class="table"><thead><tr><th>Date</th><th>Séance</th><th>Ressenti</th><th></th></tr></thead><tbody>
         ${[...logs].reverse().map((l) => `<tr><td>${parseYmd(l.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</td>
@@ -478,6 +513,23 @@ function renderStats() {
           <td>${feelLabel(l.feeling)}</td><td><button class="link" data-del="${l.id}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
       </tbody></table>` : '<p class="empty">Aucune séance notée pour l\'instant.</p>'}
     </section>`;
+}
+
+function benchTable() {
+  const list = (state.benchmarks || []).slice(-3);
+  const due = benchDue(state);
+  if (!list.length) return '<p class="empty">Aucune prise de référence. Lance-la depuis l\'onglet Aujourd\'hui.</p>';
+  const d = (b) => parseYmd(b.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const rows = BENCH_TESTS.filter((t) => list.some((b) => b[t.key])).map((t) => {
+    const vals = list.map((b) => b[t.key]);
+    const known = vals.filter((v) => v != null);
+    const delta = known.length > 1 ? known.at(-1) - known.at(-2) : null;
+    return `<tr><td>${t.label}</td>${vals.map((v) => `<td class="num">${v ?? '–'}</td>`).join('')}
+      <td class="num">${delta == null ? '' : delta > 0 ? `<span class="up">▲ +${delta}</span>` : delta < 0 ? `<span class="down">▼ ${delta}</span>` : '='}</td></tr>`;
+  }).join('');
+  return `<p class="small muted">${due.due ? 'Une nouvelle prise de référence est conseillée.' : `Prochaine dans ${due.inDays} jours.`}</p>
+    <div class="table-scroll"><table class="table"><thead><tr><th>Test</th>${list.map((b) => `<th class="num">${d(b)}</th>`).join('')}<th class="num">Évol.</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
 }
 
 // ---------- Réglages ----------
@@ -542,6 +594,7 @@ document.addEventListener('click', async (e) => {
   if (d.info !== undefined && d.info) return openGuide(d.info);
   if (d.action === 'close-sheet') { $('#sheet').hidden = true; return; }
   if (d.guided) return startGuided(d.guided);
+  if (d.benchEdit) { editBench = d.benchEdit; refOpen = true; return render(); }
   if (d.action === 'resume-guided') return go('guided');
   if (d.g === 'toggle') {
     if (guided.running) { guided.pause(); releaseWake(); } else { guided.start(); requestWake(); }
@@ -643,6 +696,16 @@ document.addEventListener('submit', (e) => {
   const fd = new FormData(f);
   const kind = f.dataset.form;
   if (kind === 'log' || kind === 'extra') return submitLog(f);
+  if (kind === 'bench') {
+    const entry = { date: f.dataset.date };
+    BENCH_TESTS.forEach(({ key }) => { const v = Number(fd.get(key)); if (v > 0) entry[key] = v; });
+    if (Object.keys(entry).length === 1) return toast('Note au moins un résultat.');
+    state.benchmarks = [...(state.benchmarks || []).filter((b) => b.date !== entry.date), entry].sort((a, b) => a.date.localeCompare(b.date));
+    editBench = null;
+    refOpen = true;
+    persist(); render();
+    return toast(['Références enregistrées 📏', ...benchSummary(state)].join('<br>'), 8000);
+  }
   if (kind === 'countdown') {
     customCfg.countdown = Math.max(5, Number(fd.get('countdown')) || 90);
     timer.reset({ mode: 'countdown', seconds: customCfg.countdown, label: 'Minuteur' });

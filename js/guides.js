@@ -123,11 +123,11 @@ export const GUIDES = {
     errors: ['Basculer le buste en arrière pour tirer.', 'Hausser les épaules vers les oreilles.'],
   },
   'developpe-epaules': {
-    title: 'Développé épaules haltères', query: 'développé militaire haltères technique',
+    title: 'Développé épaules haltère', query: 'développé militaire haltère un bras technique',
     steps: [
-      'Assis dos calé, ou debout gainé, haltères à hauteur des oreilles, paumes vers l\'avant.',
-      'Pousse au-dessus de la tête sans cambrer.',
-      'Redescends lentement à hauteur des oreilles.',
+      'Assis dos calé, ou debout gainé, haltère(s) à hauteur de l\'oreille, paume vers l\'avant.',
+      'Pousse au-dessus de la tête sans cambrer ni pencher le buste sur le côté.',
+      'Redescends lentement à hauteur de l\'oreille. À un bras : fais toutes les répétitions d\'un côté, puis de l\'autre.',
     ],
     errors: ['Cambrer le bas du dos : serre abdos et fessiers.', 'Avancer la tête : garde le menton rentré.'],
   },
@@ -323,10 +323,10 @@ export const GUIDES = {
     errors: ['Utiliser l\'élan.'],
   },
   oiseau: {
-    title: 'Oiseau haltères', query: 'oiseau haltères deltoïde postérieur technique',
+    title: 'Oiseau (un bras)', query: 'oiseau un bras haltère deltoïde postérieur',
     steps: [
-      'Buste penché à environ 45°, dos plat, haltères légers sous les épaules.',
-      'Écarte les bras sur les côtés, coudes légèrement fléchis, jusqu\'à hauteur des épaules.',
+      'Buste penché à environ 45°, dos plat, main libre sur une chaise, haltère léger sous l\'épaule.',
+      'Écarte le bras sur le côté, coude légèrement fléchi, jusqu\'à hauteur de l\'épaule.',
       'Serre les omoplates en haut, puis redescends lentement.',
     ],
     errors: ['Prendre trop lourd et donner de l\'élan.', 'Lever la tête : nuque dans l\'alignement du dos.'],
@@ -376,10 +376,10 @@ export const GUIDES = {
     errors: ['Coudes trop écartés.'],
   },
   'elevations-laterales': {
-    title: 'Élévations latérales', query: 'élévations latérales haltères technique',
+    title: 'Élévations latérales', query: 'élévation latérale un bras haltère technique',
     steps: [
-      'Debout, haltères le long du corps, coudes légèrement fléchis.',
-      'Monte les bras sur les côtés jusqu\'à hauteur des épaules.',
+      'Debout, haltère le long du corps, coude légèrement fléchi. Main libre posée sur un mur ou une chaise.',
+      'Monte le bras sur le côté jusqu\'à hauteur de l\'épaule.',
       'Redescends lentement.',
     ],
     errors: ['Hausser les épaules.', 'Balancer le buste.'],
@@ -395,10 +395,10 @@ export const GUIDES = {
     tip: 'Trop dur ? Écarte un peu les mains, ou pose les genoux au sol.',
   },
   curl: {
-    title: 'Curl haltères', query: 'curl biceps haltères technique',
+    title: 'Curl haltère', query: 'curl biceps haltère un bras technique',
     steps: [
-      'Debout, coudes collés au corps, paumes vers l\'avant.',
-      'Plie les coudes pour monter les haltères, sans bouger les coudes.',
+      'Debout, coude collé au corps, paume vers l\'avant.',
+      'Plie le coude pour monter l\'haltère, sans avancer le coude.',
       'Redescends en 2 à 3 secondes.',
     ],
     errors: ['Balancer le buste.'],
@@ -430,6 +430,29 @@ export const GUIDES = {
     errors: ['Rebondir ou forcer.'],
   },
 };
+
+Object.assign(GUIDES, {
+  pince: {
+    title: 'Pince de préhension', query: 'hand gripper technique fermeture complète',
+    steps: [
+      'Pince dans la paume, poignées calées à la base des doigts, poignet droit.',
+      'Ferme complètement jusqu\'à ce que les poignées se touchent, tiens 1 seconde.',
+      'Rouvre lentement en gardant le contrôle.',
+    ],
+    errors: ['Fermer à moitié : seule la fermeture complète compte.', 'Plier le poignet.'],
+    tip: 'Ta poulie a déjà été touchée : douleur dans un doigt = stop. Commence léger et monte progressivement.',
+  },
+  'test-cooper': {
+    title: 'Test de Cooper (12 min)', query: 'test de cooper 12 minutes conseils',
+    steps: [
+      'Échauffe-toi 10 min en footing facile.',
+      'Cours la plus grande distance possible en 12 min sur un terrain plat (piste ou parcours mesuré par ta montre ou ton téléphone).',
+      'Pars à une allure régulière et accélère sur les 2 dernières minutes.',
+    ],
+    errors: ['Partir trop vite et marcher ensuite.'],
+    tip: 'L\'appli en déduit ta VMA et tes allures de footing et de fractionné.',
+  },
+});
 
 export function videoUrl(guide) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(guide.query)}`;

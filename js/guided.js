@@ -28,7 +28,7 @@ export function buildSteps(session) {
         }
       } else {
         steps.push({
-          kind: 'work', title: e.name, sub: [setTag, e.setLabels ? '' : e.reps].filter(Boolean).join(' · '), dur: e.work, timed: !!e.timed, ex: i, info: e.info,
+          kind: 'work', title: e.name, sub: [setTag, e.setLabels ? '' : e.reps].filter(Boolean).join(' · '), dur: e.work, timed: !!e.timed, countUp: !!e.countUp, ex: i, info: e.info,
         });
       }
       if (s < e.sets && e.rest) {
@@ -164,7 +164,7 @@ export class GuidedRunner {
       this.lastCount = sec;
       signal('count', this.opts);
     }
-    if (this.running && !st.timed && remaining <= 0 && !this.overtimeSignaled) {
+    if (this.running && !st.timed && !st.countUp && remaining <= 0 && !this.overtimeSignaled) {
       this.overtimeSignaled = true;
       signal('count', this.opts);
     }

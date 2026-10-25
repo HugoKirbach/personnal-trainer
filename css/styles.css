@@ -254,4 +254,15 @@ body.guided-mode main { padding: 0; max-width: none; }
 .g-controls button { min-height: 60px; font-size: 1.2rem; }
 .g-controls .big, .g-end .big { font-size: 1.15rem; min-height: 60px; }
 
+.ref-wrap > summary { font-weight: 600; }
+.ref-wrap .session { border: 0; padding: 0; margin: 10px 0 0; background: none; }
+.pill.due { background: var(--work); }
+.unit-input { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.unit-input input { margin: 0; }
+.unit-input span { color: var(--muted); font-size: .85rem; min-width: 2.2em; }
+.bench-summary { padding-left: 18px; margin: 4px 0 0; }
+.table-scroll { overflow-x: auto; }
+.up { color: var(--rest); font-weight: 600; }
+.down { color: var(--danger); font-weight: 600; }
+
 [hidden] { display: none !important; }

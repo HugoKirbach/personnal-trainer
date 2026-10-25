@@ -1,5 +1,5 @@
 // Service worker : fonctionnement hors ligne et rappel du jour.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/program.js', 'js/store.js', 'js/timer.js', 'js/charts.js', 'js/calendar.js', 'js/guided.js', 'js/guides.js',
