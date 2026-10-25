@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlan, blockAt, seasonStatus } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -527,4 +527,66 @@ test('séance à la durée choisie : plus courte, mobilité et exercice principa
   const week = weekSessions(parseYmd('2026-11-02'), st);
   assert.equal(week[1].minutes, 30);
   assert.equal(week[0].minutes, null);
+});
+
+test('plan de saison : blocs enchaînés jusqu\'à la date, affûtage à la fin', () => {
+  for (let k = 1; k <= 12; k++) {
+    const list = allocateBlocks(k);
+    assert.equal(list.length, k);
+    assert.equal(list.at(-1), 'performance');
+    if (k >= 3) assert.ok(list.includes('force') && list.includes('endurance'), `${k}`);
+  }
+  const st = baseState();
+  st.settings.goal = { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' };
+  const plan = seasonPlan(st);
+  assert.equal(plan.fromWeek, 1);
+  assert.equal(plan.blocks[0].phase, 'base');
+  assert.equal(plan.blocks.at(-1).phase, 'affutage');
+  assert.equal(plan.blocks.at(-1).to, plan.goalWeek);
+  assert.equal(plan.blocks.at(-1).from, plan.goalWeek - 1);
+  for (let i = 1; i < plan.blocks.length; i++) {
+    assert.equal(plan.blocks[i].from, plan.blocks[i - 1].to + 1, 'blocs contigus');
+    assert.notEqual(plan.blocks[i].phase, plan.blocks[i - 1].phase, 'cycles de même phase regroupés');
+  }
+  assert.ok(blockAt(plan, plan.goalWeek).goalWeek);
+  assert.equal(blockAt(plan, plan.goalWeek + 1), null);
+  // Contenu selon le bloc, et séances valides dans chaque bloc.
+  const mondayOfWeek = (w) => { const d = parseYmd('2026-10-26'); d.setDate(d.getDate() + 7 * (w - 1) + 2); return d; };
+  for (const b of plan.blocks) {
+    const day = mondayOfWeek(b.from);
+    for (const key of TEMPLATE_KEYS) {
+      const s = buildSession(key, day, st);
+      s.exercises.forEach((e) => assert.ok(!/undefined|NaN/.test(e.detail), `${b.phase} ${key} : ${e.detail}`));
+      assert.equal(s.block.phase, b.phase);
+    }
+  }
+  const at = (phase) => mondayOfWeek(plan.blocks.find((b) => b.phase === phase).from + 1);
+  assert.ok(buildSession('bloc', at('endurance'), st).exercises.some((e) => e.name === '4 × 4 en bloc'));
+  assert.ok(buildSession('voie', at('endurance'), st).exercises.some((e) => e.info === '4x4'));
+  assert.ok(buildSession('voie', at('force'), st).exercises.some((e) => e.name === 'Voie projet'));
+  const home = { ...st, settings: { ...st.settings, access: { escalade: false, muscu: false } } };
+  assert.ok(buildSession('bloc', at('endurance'), home).exercises.some((e) => e.name === 'Suspensions répétées'));
+  const taper = mondayOfWeek(plan.goalWeek);
+  const taperBloc = buildSession('bloc', taper, st);
+  assert.ok(!taperBloc.exercises.some((e) => e.info === 'poutre' || e.info === 'projet'), 'affûtage : ni poutre ni projet');
+  assert.ok(buildSession('voie', taper, st).notes.some((n) => n.includes('tenter ton 7a')));
+  const noPlan = baseState();
+  assert.ok(taperBloc.totalSeconds < buildSession('bloc', taper, noPlan).totalSeconds);
+});
+
+test('plan de saison : en avance ou en retard sur la cotation attendue', () => {
+  const st = baseState();
+  st.settings.goal = { grade: '7a', kind: 'voie', date: '2027-06-12', from: '2026-10-26', fromGrade: '6b' };
+  const today = parseYmd('2027-02-10');
+  assert.equal(seasonStatus(st, today).pace, 'unknown');
+  st.climbs = [{ id: '1', date: '2027-02-06', kind: 'voie', grade: '6b', style: 'enchaine' }];
+  const behind = seasonStatus(st, today);
+  assert.equal(behind.pace, 'behind');
+  assert.ok(behind.gap >= 1);
+  st.climbs.push({ id: '2', date: '2027-02-08', kind: 'voie', grade: '7a', style: 'flash' });
+  assert.equal(seasonStatus(st, today).pace, 'reached');
+  st.climbs = [{ id: '3', date: '2027-02-08', kind: 'voie', grade: '7a', style: 'travail' }];
+  assert.equal(seasonStatus(st, today).pace, 'unknown', 'une voie en travail ne compte pas');
+  st.benchmarks = [{ date: '2026-10-26', pullups: 8, hang: 40 }, { date: '2027-01-25', pullups: 12, hang: 55 }];
+  assert.deepEqual(seasonStatus(st, today).gains, [{ key: 'pullups', delta: 4 }, { key: 'hang', delta: 15 }]);
 });

@@ -1,5 +1,5 @@
 // Graphiques SVG faits main (aucune dépendance, fonctionne hors ligne).
-import { GRADES, TYPES, mondayOf, ymd, parseYmd } from './program.js';
+import { BLOCKS, GRADES, TYPES, mondayOf, ymd, parseYmd } from './program.js';
 
 const ORDER = ['escalade', 'muscu', 'cardio'];
 const FEEL = { facile: 3, ok: 2, dur: 1 };
@@ -194,6 +194,50 @@ export function climbPyramid(climbs, weeks = 8) {
     g += `<rect x="0" y="${y0}" width="${W}" height="${row}" class="hit" data-tip="${esc(tip)}"/>`;
   });
   return `<h3>Pyramide des ${weeks} dernières semaines</h3>${frame(W, H, g)}`;
+}
+
+// Plan de saison : les blocs le long des semaines, le bloc en cours en couleur, la semaine actuelle marquée.
+export function seasonChart(st, startYmd) {
+  const { plan, week } = st;
+  const W = 340, H = 86, L = 2, R = 2, T = 22, BH = 26;
+  const first = plan.fromWeek;
+  const n = plan.goalWeek - first + 1;
+  const x = (w) => L + ((w - first) / n) * (W - L - R);
+  const monday = (w) => { const d = parseYmd(startYmd); d.setDate(d.getDate() + 7 * (w - 1)); return d; };
+  const day = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  let g = '';
+  plan.blocks.forEach((b, i) => {
+    const x0 = x(b.from) + (i ? 1 : 0);
+    const x1 = x(b.to + 1) - (i < plan.blocks.length - 1 ? 1 : 0); // 2px d'écart entre blocs
+    const cur = week >= b.from && week <= b.to;
+    const name = BLOCKS[b.phase].name;
+    const end = monday(b.to); end.setDate(end.getDate() + 6);
+    g += `<rect x="${x0}" y="${T}" width="${Math.max(1, x1 - x0)}" height="${BH}" rx="4" class="blk${cur ? ' cur' : week > b.to ? ' past' : ''}"/>`;
+    const { short } = BLOCKS[b.phase];
+    const fits = (t) => x1 - x0 > t.length * 6.5 + 8;
+    const label = fits(name) ? name : fits(short) ? short : x1 - x0 > 14 ? short[0] : '';
+    if (label) g += `<text x="${(x0 + x1) / 2}" y="${T + BH / 2 + 4}" text-anchor="middle" class="blk-label${cur ? ' cur' : ''}">${label}</text>`;
+    const tip = `<strong>${name}</strong> · ${b.to - b.from + 1} semaine${b.to > b.from ? 's' : ''}<br>du ${day(monday(b.from))} au ${day(end)}<br>${BLOCKS[b.phase].note}`;
+    g += `<rect x="${x0}" y="${T - 6}" width="${Math.max(1, x1 - x0)}" height="${BH + 12}" class="hit" data-tip="${esc(tip)}"/>`;
+  });
+  if (week >= first && week <= plan.goalWeek) {
+    const xn = x(week + 0.5);
+    g += `<line x1="${xn}" x2="${xn}" y1="${T - 4}" y2="${T + BH + 4}" class="now"/>`;
+    g += `<text x="${Math.min(W - 30, Math.max(30, xn))}" y="${T - 9}" text-anchor="middle" class="axis value">Aujourd'hui</text>`;
+  }
+  // Mois sous la frise (semaine où le mois commence), espacés d'au moins 30 px.
+  const months = [];
+  for (let w = first; w <= plan.goalWeek; w++) {
+    if (w === first || monday(w).getMonth() !== monday(w - 1).getMonth()) months.push({ xm: x(w), d: monday(w) });
+  }
+  if (months.length > 1 && months[1].xm - months[0].xm < 30) months.shift(); // mois de départ entamé
+  let lastX = -99;
+  for (const { xm, d } of months) {
+    if (xm - lastX < 30 || xm > W - 16) continue;
+    lastX = xm;
+    g += `<text x="${xm}" y="${T + BH + 18}" class="axis">${d.toLocaleDateString('fr-FR', { month: 'short' })}</text>`;
+  }
+  return frame(W, H, g);
 }
 
 function empty(text) {

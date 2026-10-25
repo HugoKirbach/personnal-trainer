@@ -149,6 +149,93 @@ export function weekInfo(date, startYmd) {
   return { week, cycle, phase: PHASES[p], phaseIndex: p, mult };
 }
 
+// ---------- Plan de saison vers un objectif ----------
+// Les cycles de 4 semaines deviennent des blocs qui s'enchaînent jusqu'à la date visée,
+// puis deux semaines d'affûtage (la semaine d'avant et celle de l'objectif).
+export const BLOCKS = {
+  base: { name: 'Base', short: 'Base', note: 'Volume et technique : beaucoup de grimpe facile et propre, charges modérées.', mult: 1 },
+  force: { name: 'Force', short: 'Force', note: 'Blocs durs et charges lourdes, avec des repos complets entre les efforts.', mult: 0.95 },
+  endurance: { name: 'Force-endurance', short: 'Endurance', note: 'Continuité et 4 × 4 : tenir longtemps sans exploser.', mult: 1 },
+  performance: { name: 'Performance', short: 'Perf', note: 'Essais sur tes projets, volume réduit pour rester frais.', mult: 0.9 },
+  affutage: { name: 'Affûtage', short: 'Affût', note: 'Peu de volume, intensité gardée : tu arrives frais le jour J.', mult: 0.6 },
+};
+
+// Répartition des cycles disponibles avant l'affûtage.
+export function allocateBlocks(k) {
+  if (k <= 0) return [];
+  if (k === 1) return ['performance'];
+  if (k === 2) return ['force', 'performance'];
+  if (k === 3) return ['force', 'endurance', 'performance'];
+  const base = Math.max(1, Math.round(k * 0.25));
+  const endurance = Math.max(1, Math.round(k * 0.25));
+  return [...Array(base).fill('base'), ...Array(k - base - endurance - 1).fill('force'), ...Array(endurance).fill('endurance'), 'performance'];
+}
+
+// settings.goal = { grade, kind (voie ou bloc), date, from (lundi où le plan a été fixé), fromGrade }
+export function seasonPlan(state) {
+  const g = state.settings.goal;
+  if (!g?.date || !g.from) return null;
+  const start = state.settings.startDate;
+  const goalWeek = weekInfo(parseYmd(g.date), start).week;
+  const fromWeek = Math.min(goalWeek, weekInfo(parseYmd(g.from), start).week);
+  const taperFrom = Math.max(fromWeek, goalWeek - 1);
+  const firstCycle = Math.ceil(fromWeek / 4);
+  const k = taperFrom > fromWeek ? Math.ceil((taperFrom - 1) / 4) - firstCycle + 1 : 0;
+  // Un bloc regroupe les cycles consécutifs de la même phase.
+  const blocks = [];
+  allocateBlocks(k).forEach((phase, j) => {
+    const c = firstCycle + j;
+    const from = Math.max(fromWeek, 4 * (c - 1) + 1);
+    const to = Math.min(4 * c, taperFrom - 1);
+    if (blocks.at(-1)?.phase === phase) blocks.at(-1).to = to;
+    else blocks.push({ phase, from, to });
+  });
+  blocks.push({ phase: 'affutage', from: taperFrom, to: goalWeek });
+  return { ...g, fromWeek, goalWeek, blocks };
+}
+
+export function blockAt(plan, week) {
+  if (!plan || week < plan.fromWeek || week > plan.goalWeek) return null;
+  const index = plan.blocks.findIndex((b) => week >= b.from && week <= b.to);
+  const b = plan.blocks[index];
+  return { ...b, ...BLOCKS[b.phase], index, weekIn: week - b.from + 1, weeks: b.to - b.from + 1, goalWeek: week === plan.goalWeek };
+}
+
+// Meilleure cotation enchaînée ces 8 dernières semaines (carnet d'escalade, sinon ressenti des séances).
+export function recentMax(state, kind, today = new Date()) {
+  const since = addDays(today, -56);
+  const end = ymd(today);
+  const idx = [
+    ...(state.climbs || []).filter((c) => c.kind === kind && c.style !== 'travail' && c.date >= since && c.date <= end).map((c) => c.grade),
+    ...(state.logs || []).filter((l) => l.maxGrade && l.key === kind && l.date >= since && l.date <= end).map((l) => l.maxGrade),
+  ].map((x) => GRADES.indexOf(x)).filter((i) => i >= 0);
+  return idx.length ? GRADES[Math.max(...idx)] : null;
+}
+
+// Où en est la saison : bloc en cours, cotation attendue (progression linéaire vers l'objectif) et références.
+export function seasonStatus(state, today = new Date()) {
+  const plan = seasonPlan(state);
+  if (!plan) return null;
+  const week = weekInfo(today, state.settings.startDate).week;
+  const block = blockAt(plan, week);
+  const daysLeft = Math.round((parseYmd(plan.date) - parseYmd(ymd(today))) / 86400000);
+  const from = GRADES.indexOf(plan.fromGrade);
+  const to = GRADES.indexOf(plan.grade);
+  const progress = clamp((week - plan.fromWeek) / Math.max(1, plan.goalWeek - plan.fromWeek), 0, 1);
+  const expected = GRADES[Math.round(from + (to - from) * progress)];
+  const current = recentMax(state, plan.kind, today);
+  const ci = GRADES.indexOf(current);
+  const ei = GRADES.indexOf(expected);
+  const pace = !current ? 'unknown' : ci >= to ? 'reached' : ci > ei ? 'ahead' : ci === ei ? 'on-track' : 'behind';
+  const benches = state.benchmarks || [];
+  const ref = [...benches].reverse().find((b) => b.date <= plan.from) || benches[0];
+  const last = benches.at(-1);
+  const gains = ref && last && ref !== last
+    ? ['pullups', 'hang', 'gripper'].filter((k) => ref[k] && last[k]).map((k) => ({ key: k, delta: last[k] - ref[k] }))
+    : [];
+  return { plan, week, block, daysLeft, expected, current, pace, gap: ei - ci, gains, over: week > plan.goalWeek };
+}
+
 export function weekKey(date) {
   return ymd(mondayOf(date));
 }
@@ -269,7 +356,7 @@ const STRAIN = {
 };
 export const strainOf = (info) => [...new Set([].concat(info || []).flatMap((i) => STRAIN[i] || []))];
 
-const addDays = (d, n) => ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
+function addDays(d, n) { return ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)); }
 
 // Zones douloureuses actives à une date : { zone: date de fin }.
 export function activePains(state, dateYmd) {
@@ -572,13 +659,16 @@ export function buildSession(key, date, state, express = false, minutes = null) 
   const variant = resolveKey(key, state, express);
   const t = TEMPLATES[variant];
   const type = t.type;
-  const f = info.mult * (a[type] ?? 1);
+  const block = blockAt(seasonPlan(state), info.week);
+  const f = info.mult * (block?.mult ?? 1) * (a[type] ?? 1);
   const bench = latestBench(state);
   const p = prescriptions(bench);
   const runs = state.settings.access?.course !== false;
-  const ctx = { f, info, p, g: a.gradeIdx, run: runs, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
+  const ctx = { f, info, p, g: a.gradeIdx, run: runs, block: block?.phase ?? null, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
+  if (block?.goalWeek && type === 'escalade' && !t.reference) notes.unshift(`Semaine objectif : tu es frais, c'est le moment de tenter ton ${state.settings.goal.grade} !`);
+  else if (block?.phase === 'performance' && type === 'escalade' && !t.home) notes.unshift('Bloc performance : commence par tes projets, quand tu es frais.');
   const day = ymd(date);
   let items = raw.filter((e) => e.kind !== 'note').map((e) => applySwap(e, state, day, t.home ? 'home' : 'gym', p));
 
@@ -620,7 +710,7 @@ export function buildSession(key, date, state, express = false, minutes = null) 
   const totalSeconds = sessionSeconds(exercises);
   return {
     key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, mobility: !!t.mobility, form, notes,
-    title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, fullSeconds, minutes: fit, phase: info.phase, week: info.week, exercises,
+    title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, fullSeconds, minutes: fit, phase: info.phase, week: info.week, block, exercises,
   };
 }
 
@@ -750,30 +840,41 @@ export function routineSession(date, state) {
 const TEMPLATES = {
   bloc: {
     type: 'escalade', title: 'Escalade bloc', restAfter: 120,
-    build: ({ info, g, sets }) => [
-      MOBILITY,
-      { name: 'Montée en température', info: 'grimpe-echauffement', work: 600, timed: true, note: `6 à 8 blocs faciles (niveau ~${grade(g - 3)}), grimpés lentement et proprement.` },
-      { name: 'Blocs au niveau', info: 'bloc-niveau', sets: sets(5), reps: '2 à 3 essais', work: 150, rest: 180, unit: 'blocs', note: `Un bloc différent à chaque fois, autour de ${grade(g - 1)}.` },
-      info.phaseIndex === 3
-        ? { name: 'Séance technique (décharge)', info: 'technique-pieds', work: 900, timed: true, note: 'Pas de projet cette semaine : blocs faciles en cherchant le geste parfait, pieds silencieux.' }
-        : { name: 'Projet', info: 'projet', sets: sets(6), reps: '1 essai', work: 60, rest: 240, unit: 'essais', note: `1 ou 2 blocs à ta limite (~${grade(g)}).` },
-      info.week >= 5 && info.phaseIndex !== 3
-        ? { name: 'Poutre douce (salle d\'escalade)', info: 'poutre', label: 'Poutre', sets: sets(5), inner: { work: 7, rest: 3, rounds: 6 }, rest: 120, note: 'Réglette 20 mm, prise tendue, pieds au sol si besoin. Effort 6/10 max.' }
-        : { kind: 'note', text: 'Pas de poutre avant la semaine 5 : on laisse tes poulies se réhabituer à la grimpe.' },
-      { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements doux des avant-bras et des doigts, nuque, dos.' },
-    ],
+    build: ({ info, g, sets, block }) => {
+      const easy = info.phaseIndex === 3 || block === 'affutage';
+      const hard = block === 'force' || block === 'performance';
+      return [
+        MOBILITY,
+        { name: 'Montée en température', info: 'grimpe-echauffement', work: 600, timed: true, note: `6 à 8 blocs faciles (niveau ~${grade(g - 3)}), grimpés lentement et proprement.` },
+        block === 'endurance'
+          ? { name: '4 × 4 en bloc', info: '4x4', sets: sets(3), reps: '4 blocs faciles enchaînés', work: 300, rest: 240, note: `Niveau ~${grade(g - 3)}, sans repos entre les 4 blocs.` }
+          : { name: 'Blocs au niveau', info: 'bloc-niveau', sets: sets(block === 'base' ? 6 : hard ? 4 : 5), reps: '2 à 3 essais', work: 150, rest: 180, unit: 'blocs', note: `Un bloc différent à chaque fois, autour de ${grade(g - 1)}.` },
+        easy
+          ? { name: `Séance technique (${info.phaseIndex === 3 ? 'décharge' : 'affûtage'})`, info: 'technique-pieds', work: 900, timed: true, note: 'Pas de projet cette semaine : blocs faciles en cherchant le geste parfait, pieds silencieux.' }
+          : { name: block === 'performance' ? 'Projets' : 'Projet', info: 'projet', sets: sets(hard ? 7 : block === 'base' ? 4 : 6), reps: '1 essai', work: 60, rest: 240, unit: 'essais', note: block === 'performance' ? `Tes projets (~${grade(g)} à ${grade(g + 1)}) : essais complets, 4 min de repos.` : `1 ou 2 blocs à ta limite (~${grade(g)}).` },
+        info.week >= 5 && !easy
+          ? { name: 'Poutre douce (salle d\'escalade)', info: 'poutre', label: 'Poutre', sets: sets(block === 'force' ? 6 : 5), inner: { work: 7, rest: 3, rounds: 6 }, rest: 120, note: 'Réglette 20 mm, prise tendue, pieds au sol si besoin. Effort 6/10 max.' }
+          : info.week < 5 ? { kind: 'note', text: 'Pas de poutre avant la semaine 5 : on laisse tes poulies se réhabituer à la grimpe.' } : null,
+        { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements doux des avant-bras et des doigts, nuque, dos.' },
+      ];
+    },
   },
   voie: {
     type: 'escalade', title: 'Escalade voie', restAfter: 120,
-    build: ({ info, g, sets }) => {
-      const pyramid = [g - 2, g - 2, g - 1, g - 1, ...(info.phaseIndex === 3 ? [] : [g])].map((x) => grade(x));
+    build: ({ info, g, sets, block }) => {
+      const easy = info.phaseIndex === 3 || block === 'affutage';
+      const pyramid = [g - 2, g - 2, g - 1, g - 1, ...(easy ? [] : [g])].map((x) => grade(x));
+      // Dernier bloc de la séance : selon le bloc de saison, sinon 4 × 4 en semaine d'intensification.
+      const last = block === 'endurance' ? '4x4' : (block === 'force' || block === 'performance') && !easy ? 'projet' : block ? 'continuite' : info.phaseIndex === 2 ? '4x4' : 'continuite';
       return [
         MOBILITY,
         { name: 'Voies d\'échauffement', info: 'grimpe-echauffement', sets: 3, reps: 'voie facile', work: 240, rest: 90, unit: 'voies', note: `Niveau ~${grade(g - 3)}.` },
         { name: 'Pyramide', info: 'pyramide-voie', sets: pyramid.length, setLabels: pyramid, work: 300, rest: 240, unit: 'voies', note: 'Repère repos et clippages avant de partir.' },
-        info.phaseIndex === 2
-          ? { name: 'Endurance : 4 × 4', info: '4x4', sets: sets(3), reps: '4 voies faciles enchaînées', work: 480, rest: 240, note: `Niveau ~${grade(g - 4)}, sans repos entre les 4 voies.` }
-          : { name: 'Continuité', info: 'continuite', sets: sets(3), reps: 'voie facile montée, désescaladée puis remontée', work: 420, rest: 300, note: `Niveau ~${grade(g - 3)}, sans toucher le sol.` },
+        {
+          '4x4': { name: 'Endurance : 4 × 4', info: '4x4', sets: sets(3), reps: '4 voies faciles enchaînées', work: 480, rest: 240, note: `Niveau ~${grade(g - 4)}, sans repos entre les 4 voies.` },
+          projet: { name: 'Voie projet', info: 'projet', sets: sets(3), reps: '1 essai', work: 360, rest: 360, unit: 'essais', note: `Une voie à ta limite (~${grade(g)}), 6 min de repos complet entre les essais.` },
+          continuite: { name: 'Continuité', info: 'continuite', sets: sets(3), reps: 'voie facile montée, désescaladée puis remontée', work: 420, rest: 300, note: `Niveau ~${grade(g - 3)}, sans toucher le sol.` },
+        }[last],
         { name: 'Retour au calme', info: 'etirements-grimpe', work: 420, timed: true, note: 'Une voie très facile en souplesse, puis étirements avant-bras, nuque et dos.' },
       ];
     },
@@ -835,8 +936,9 @@ const TEMPLATES = {
   // ---------- À la maison : barre de traction, un haltère réglable 2 à 10 kg, gilet 4 à 8 kg, pince 5 à 60 kg ----------
   blocMaison: {
     type: 'escalade', title: 'Force grimpe à la maison', home: true, restAfter: 90,
-    build: ({ info, sets, p }) => {
-      const weighted = (p.weightedPull ?? info.week >= 5) && info.phaseIndex !== 3;
+    build: ({ info, sets, p, block }) => {
+      const weighted = (p.weightedPull ?? info.week >= 5) && info.phaseIndex !== 3 && block !== 'affutage';
+      const pulls = sets(block === 'force' ? 5 : 4);
       return [
         MOBILITY,
         {
@@ -846,12 +948,16 @@ const TEMPLATES = {
             { name: 'Cercles de bras', label: '10 cercles de bras', work: 20 },
           ],
         },
-        { name: 'Suspensions actives', info: 'suspensions', sets: sets(4), work: p.hang, timed: true, rest: 40, note: 'Épaules engagées. Prise large et confortable, pas du bout des doigts.' },
+        block === 'endurance'
+          ? { name: 'Suspensions répétées', info: 'suspensions', label: 'Suspensions', sets: sets(4), inner: { work: 7, rest: 3, rounds: 6 }, rest: 120, note: 'À la barre, prise large et confortable, épaules engagées.' }
+          : { name: 'Suspensions actives', info: 'suspensions', sets: sets(4), work: p.hang, timed: true, rest: 40, note: 'Épaules engagées. Prise large et confortable, pas du bout des doigts.' },
         weighted
-          ? { name: 'Tractions lestées', info: 'tractions', sets: sets(4), reps: '3 à 5', load: VEST(p.vest), work: 25, rest: 150, note: 'Amplitude complète, sans élan.' }
-          : { name: 'Tractions', info: 'tractions', sets: sets(4), reps: p.pullReps, work: 30, rest: 120, note: 'Amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve.' },
+          ? { name: 'Tractions lestées', info: 'tractions', sets: pulls, reps: '3 à 5', load: VEST(p.vest), work: 25, rest: 150, note: 'Amplitude complète, sans élan.' }
+          : { name: 'Tractions', info: 'tractions', sets: pulls, reps: p.pullReps, work: 30, rest: 120, note: 'Amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve.' },
         { name: 'Tractions négatives', info: 'tractions-negatives', sets: sets(3), reps: '3', work: 25, rest: 90, note: 'Descente en 5 secondes.' },
-        { name: 'Pince de préhension', info: 'pince', sets: sets(3), reps: '8 à 10 par main', load: GRIP(p.grip), work: 60, rest: 90, note: `${p.grip ? '' : 'Règle la pince pour 8 à 10 fermetures difficiles mais propres. '}Stop à la moindre douleur dans un doigt.` },
+        block === 'endurance'
+          ? { name: 'Pince endurance', info: 'pince', sets: sets(3), reps: '20 par main', load: GRIP(p.gripEndurance), work: 80, rest: 60, note: `${p.gripEndurance ? 'Rythme régulier.' : 'Pince légère : 20 fermetures doivent être faisables, rythme régulier.'}` }
+          : { name: 'Pince de préhension', info: 'pince', sets: sets(3), reps: '8 à 10 par main', load: GRIP(p.grip), work: 60, rest: 90, note: `${p.grip ? '' : 'Règle la pince pour 8 à 10 fermetures difficiles mais propres. '}Stop à la moindre douleur dans un doigt.` },
         { name: 'Relevés de genoux suspendu', info: 'releves-genoux', sets: sets(3), reps: '8 à 10', work: 30, rest: 60, note: 'Sans balancer.' },
         { name: 'Pompes', info: 'pompes', sets: sets(3), reps: p.pushReps, work: 35, rest: 60, note: 'Antagonistes des tractions.' },
         { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, note: 'Main libre sur une chaise. Bon pour la nuque et le haut du dos.' },
@@ -862,10 +968,10 @@ const TEMPLATES = {
   },
   voieMaison: {
     type: 'escalade', title: 'Endurance grimpe à la maison', home: true, restAfter: 90,
-    build: ({ sets, p }) => [
+    build: ({ sets, p, block }) => [
       MOBILITY,
       {
-        name: 'Circuit endurance', info: ['suspensions', 'tractions', 'pompes', 'planche'], sets: sets(4), rest: 120, note: 'Enchaîne sans pause à l\'intérieur d\'un tour.',
+        name: 'Circuit endurance', info: ['suspensions', 'tractions', 'pompes', 'planche'], sets: sets(block === 'endurance' ? 5 : 4), rest: 120, note: 'Enchaîne sans pause à l\'intérieur d\'un tour.',
         circuit: [
           { name: 'Suspension', label: `${p.hang + 10} s suspendu`, work: p.hang + 10, timed: true, info: 'suspensions' },
           { name: 'Tractions', label: `${p.circuitPull} tractions`, work: 20, info: 'tractions' },
@@ -874,7 +980,9 @@ const TEMPLATES = {
         ],
       },
       { name: 'Pyramide de tractions', info: 'tractions', sets: 7, setLabels: ['1', '2', '3', '4', '3', '2', '1'].map((n) => `${n} traction${n === '1' ? '' : 's'}`), work: 15, rest: 30, unit: 'paliers', note: 'Repos = le temps passé à tirer. Arrête si les tractions deviennent moches.' },
-      { name: 'Pince endurance', info: 'pince', sets: sets(3), reps: '20 par main', load: GRIP(p.gripEndurance), work: 80, rest: 60, note: `${p.gripEndurance ? 'Rythme régulier.' : 'Pince légère : 20 fermetures doivent être faisables, rythme régulier.'}` },
+      block === 'force'
+        ? { name: 'Pince de préhension', info: 'pince', sets: sets(3), reps: '8 à 10 par main', load: GRIP(p.grip), work: 60, rest: 90, note: `${p.grip ? '' : 'Règle la pince pour 8 à 10 fermetures difficiles mais propres. '}Stop à la moindre douleur dans un doigt.` }
+        : { name: 'Pince endurance', info: 'pince', sets: sets(3), reps: '20 par main', load: GRIP(p.gripEndurance), work: 80, rest: 60, note: `${p.gripEndurance ? 'Rythme régulier.' : 'Pince légère : 20 fermetures doivent être faisables, rythme régulier.'}` },
       { name: 'Superman', info: 'superman', sets: sets(3), reps: '12 lents', work: 40, rest: 45, note: 'Regard vers le sol pour protéger la nuque.' },
       { name: 'Extensions de poignets', info: 'extensions-poignets', sets: sets(2), reps: '15 à 20 par bras', load: DB(3), work: 60, rest: 30, note: 'Antagonistes des avant-bras.', restAfter: 30 },
       { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements avant-bras, épaules, nuque et dos.' },

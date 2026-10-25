@@ -32,9 +32,9 @@ export const GUIDES = {
   projet: {
     title: 'Travailler un projet', query: 'escalade comment travailler un projet bloc',
     steps: [
-      'Choisis 1 ou 2 blocs à ta limite.',
-      'Découpe le bloc en sections et travaille les mouvements durs séparément.',
-      'Fais de vrais repos (3 à 4 min), puis tente le bloc en entier.',
+      'Choisis 1 ou 2 blocs (ou une voie) à ta limite.',
+      'Découpe-le en sections et travaille les mouvements durs séparément.',
+      'Fais de vrais repos (3 à 4 min en bloc, 5 à 6 min en voie), puis tente-le en entier.',
     ],
     errors: ['Insister sur un mouvement qui fait mal aux doigts : change de méthode ou de bloc.'],
   },
@@ -79,7 +79,7 @@ export const GUIDES = {
   '4x4': {
     title: 'Endurance 4 × 4', query: 'escalade 4x4 entraînement endurance',
     steps: [
-      'Enchaîne 4 voies faciles sans repos entre elles : redescends et repars aussitôt.',
+      'Enchaîne 4 voies (ou 4 blocs) faciles sans repos entre elles : redescends et repars aussitôt.',
       'Garde un rythme régulier, respire, secoue les bras sur les bonnes prises.',
       'Repos de la série, puis recommence.',
     ],

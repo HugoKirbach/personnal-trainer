@@ -348,3 +348,15 @@ section.card > .climbs:first-child { border-top: 0; padding-top: 0; margin-top: 
 .swap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .duration-pick { display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 600; margin: 0 0 8px; }
 .duration-pick select { flex: 1; }
+
+/* Plan de saison */
+.chart .blk { fill: var(--surface-2); }
+.chart .blk.past { fill: var(--line); }
+.chart .blk.cur { fill: var(--primary); }
+.chart .blk-label { fill: var(--text-2); font-size: 10px; font-weight: 600; }
+.chart .blk-label.cur { fill: var(--on-primary); }
+.chart .now { stroke: var(--text); stroke-width: 2; }
+.season-card h2 { margin-bottom: 2px; }
+.season-card .table td:first-child { font-weight: 600; }
+.season-card tr.cur td { color: var(--primary); }
+.block-line { margin: 4px 0; }

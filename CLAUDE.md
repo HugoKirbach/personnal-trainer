@@ -37,6 +37,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Remplacer (`SWAP_GROUPS`, `swapChoices`, `setSwap`, `state.swaps`) : variantes par mouvement, `where` = home, gym ou any. Clé `date|nom` pour un jour, `nom` pour toujours. Toute variante a une fiche, ses charges restent dans le matériel, et `STRAIN` est complété pour les nouvelles fiches.
 - Temps dispo (`state.durations['date#index']`, `fitDuration`) : repos raccourcis (entre efforts de doigts, 3 min gardées quand il y en avait plus), échauffement et retour au calme écourtés, séries en moins depuis la fin, cardio long raccourci, puis exercices secondaires retirés. L'échauffement, la mobilité nuque et dos et le premier exercice principal restent toujours.
 - Routine nuque et dos (`nuque`, `routineSession`, index `nuque`, drapeau `mobility`) : hors programme, sans carnet de charges, et `adapt` ignore ses notes.
+- Objectif de saison (`settings.goal = { grade, kind, date, from, fromGrade }`, `seasonPlan`, `blockAt`, `seasonStatus`) : les cycles de 4 semaines entre `from` et la date deviennent des blocs (`BLOCKS` : base, force, endurance, performance, puis affûtage sur les 2 dernières semaines), les cycles consécutifs de même phase sont regroupés. Le bloc multiplie le volume (`mult`) et arrive aux modèles par `ctx.block`. La règle de la poutre (pas avant la semaine 5) reste prioritaire.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 
 ## Commandes

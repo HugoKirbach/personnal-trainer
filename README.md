@@ -31,6 +31,7 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Routine nuque et dos** : 8 min guidées, idéale les jours sans séance (nuque, haut du dos, épaules, avant-bras). Notée d'un geste, elle ne change pas le volume du programme.
 - **Parcours abdos** : une séance de 25 à 35 min, en salle ou à la maison, à lancer quand tu veux (grand droit, obliques, gainage profond et lombaires).
 - **Programme adaptatif** : cycles de 4 semaines, volume et niveau cible ajustés selon le ressenti.
+- **Objectif de saison** : fixe dans Réglages une cotation (7a en voie, par exemple) et une date. Les cycles s'enchaînent en blocs base, force, force-endurance et performance, puis deux semaines d'affûtage avant le jour J. Les séances changent selon le bloc (4 × 4, voie projet, suspensions répétées…) et Suivi montre la frise des blocs et si tu es en avance ou en retard sur la cotation attendue.
 
 - **Compte (facultatif)** : Réglages › Compte, « Continuer avec Google » ou e-mail, avec le même compte Firebase que BeatForge. Chaque changement est sauvegardé en ligne quelques secondes après, retrouvé sur un autre téléphone, et fusionné si deux téléphones ont été modifiés. Une sauvegarde par jour est gardée 7 jours (bouton « Sauvegardes en ligne » pour revenir en arrière).
 

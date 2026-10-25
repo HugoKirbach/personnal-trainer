@@ -1,7 +1,7 @@
 import {
-  BENCH_TESTS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
+  BENCH_TESTS, BLOCKS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
   buildSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSwap, swapChoices, tipFor,
-  weekInfo, weekSessions, ymd,
+  blockAt, recentMax, seasonPlan, seasonStatus, weekInfo, weekSessions, ymd,
 } from './program.js';
 import {
   load, save, defaults, normalize, onSave,
@@ -12,7 +12,7 @@ import {
 } from './cloud.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
 import {
-  CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, bindTooltips,
+  CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, seasonChart, bindTooltips,
 } from './charts.js';
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
@@ -332,7 +332,8 @@ function render() {
   document.body.classList.toggle('guided-mode', view === 'guided');
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.go === view));
   const info = weekInfo(new Date(), state.settings.startDate);
-  $('#week-badge').textContent = `Semaine ${info.week} · ${info.phase.name}`;
+  const block = blockAt(seasonPlan(state), info.week);
+  $('#week-badge').textContent = `Semaine ${info.week} · ${block ? block.name : info.phase.name}`;
   const main = $('#main');
   main.innerHTML = {
     today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings, guided: renderGuided,
@@ -495,6 +496,7 @@ function sessionCard(s) {
     ${log || s.reference || s.mobility || s.express ? '' : durationPick(s, id)}
     ${s.slot === 'midi' && !s.minutes && s.totalSeconds > 80 * 60 ? '<p class="small note">🕐 Le midi, tu as 1h20 au plus : choisis un temps dispo plus court si besoin.</p>' : ''}
     ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : s.mobility ? '' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
+    ${s.block && !s.reference && !s.bonus ? `<p class="small block-line">🎯 Bloc <strong>${s.block.name}</strong> (semaine ${s.block.weekIn} sur ${s.block.weeks}) : ${s.block.note}</p>` : ''}
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
     ${s.reference || s.mobility ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
@@ -622,12 +624,13 @@ function renderWeek() {
     return `<button class="link back" data-action="close-session">← Retour à la semaine</button>${sessionCard(s)}`;
   }
   const info = weekInfo(monday, state.settings.startDate);
+  const block = blockAt(seasonPlan(state), info.week);
   const sessions = weekSessions(monday, state);
   const end = new Date(monday); end.setDate(end.getDate() + 6);
   const f = (d) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   return `<div class="week-nav">
       <button class="icon-btn" data-week="-1" aria-label="Semaine précédente">‹</button>
-      <div><strong>${f(monday)} – ${f(end)}</strong><br><span class="muted small">Semaine ${info.week} · ${info.phase.name}</span></div>
+      <div><strong>${f(monday)} – ${f(end)}</strong><br><span class="muted small">Semaine ${info.week} · ${info.phase.name}${block ? ` · bloc ${block.name}` : ''}</span></div>
       <button class="icon-btn" data-week="1" aria-label="Semaine suivante">›</button>
     </div>
     <p class="muted small center">${info.phase.note}</p>
@@ -793,6 +796,7 @@ function renderStats() {
   const a = state.adapt;
   const pct = (v) => `${Math.round(v * 100)} %`;
   return `<h1>Suivi</h1>
+    ${seasonCard()}
     <div class="tiles">
       <div class="tile"><span class="big-num">${month}</span><span>séances ce mois</span></div>
       <div class="tile"><span class="big-num">${doneWeek}/${planned || 0}</span><span>prévues réalisées cette semaine</span></div>
@@ -815,6 +819,45 @@ function renderStats() {
           <td><i class="dot" style="background:${TYPES[l.type].color}"></i>${esc(l.title)}${l.maxGrade ? ` · ${l.maxGrade}` : ''}${l.completed === false ? ' · arrêtée' : ''}${l.pain ? ` · douleur${l.zones?.length ? ` (${l.zones.map((z) => ZONES[z].toLowerCase()).join(', ')})` : ''}` : ''}${l.note ? `<br><span class="muted small">${esc(l.note)}</span>` : ''}</td>
           <td>${feelLabel(l.feeling)}</td><td><button class="link" data-del="${l.id}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
       </tbody></table>` : '<p class="empty">Aucune séance notée pour l\'instant.</p>'}
+    </section>`;
+}
+
+// ---------- Objectif de saison ----------
+const KIND_LABEL = { voie: 'voie', bloc: 'bloc' };
+const GAIN_LABEL = { pullups: ['tractions', ''], hang: ['suspension', ' s'], gripper: ['pince', ' kg'] };
+
+function seasonCard() {
+  const st = seasonStatus(state);
+  if (!st) {
+    return `<section class="card season-card"><h2>🎯 Objectif de saison</h2>
+      <p class="small muted">Fixe une cotation et une date (par exemple 7a en voie en juin) : tes cycles s'enchaînent en blocs base, force, force-endurance et performance, puis deux semaines d'affûtage.</p>
+      <button data-go="settings">Fixer un objectif</button></section>`;
+  }
+  const { plan, block } = st;
+  const date = parseYmd(plan.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const weeks = Math.ceil(st.daysLeft / 7);
+  const when = st.over ? 'date passée' : st.daysLeft <= 0 ? 'c\'est aujourd\'hui' : st.daysLeft < 14 ? `dans ${st.daysLeft} jours` : `dans ${weeks} semaines`;
+  const kind = KIND_LABEL[plan.kind];
+  const pace = {
+    unknown: `Pas de ${kind} notée ces 8 dernières semaines : note-les au carnet d'escalade pour suivre ta progression.`,
+    behind: `Attendu cette semaine : <strong>${st.expected}</strong>. Ton max récent : <strong>${st.current}</strong>, ${st.gap} cotation${st.gap > 1 ? 's' : ''} de retard. Garde le cap : tes séances d'escalade et les blocs de force font la différence.`,
+    'on-track': `Dans les temps : <strong>${st.current}</strong> pour ${st.expected} attendu cette semaine.`,
+    ahead: `En avance : <strong>${st.current}</strong> pour ${st.expected} attendu cette semaine. 🎉`,
+    reached: `Objectif atteint : <strong>${st.current}</strong> enchaîné ! Fixe-toi le suivant dans Réglages.`,
+  }[st.pace];
+  const gains = st.gains.map((g) => `${GAIN_LABEL[g.key][0]} ${g.delta > 0 ? '+' : ''}${g.delta}${GAIN_LABEL[g.key][1]}`);
+  const monday = (w) => { const d = parseYmd(state.settings.startDate); d.setDate(d.getDate() + 7 * (w - 1)); return d; };
+  return `<section class="card season-card">
+      <h2>🎯 ${plan.grade} en ${kind}</h2>
+      <p class="small muted">Le ${date}, ${when}.</p>
+      ${seasonChart(st, state.settings.startDate)}
+      ${block ? `<p class="small">Bloc en cours : <strong>${block.name}</strong>, semaine ${block.weekIn} sur ${block.weeks}. ${block.note}</p>` : ''}
+      ${st.over ? '<p class="small">La date est passée : fixe un nouvel objectif dans Réglages.</p>' : `<p class="small">${pace}</p>`}
+      ${gains.length ? `<p class="small muted">Depuis le début du plan : ${gains.join(', ')}.</p>` : ''}
+      <details><summary class="small">Tous les blocs</summary>
+        <table class="table"><tbody>${plan.blocks.map((b) => `<tr class="${block?.from === b.from ? 'cur' : ''}"><td>${BLOCKS[b.phase].name}</td>
+          <td class="num">${b.to - b.from + 1} sem.</td><td class="num">${shortDate(ymd(monday(b.from)))}</td></tr>`).join('')}</tbody></table>
+      </details>
     </section>`;
 }
 
@@ -879,6 +922,13 @@ function renderSettings() {
         <label>Midi <input type="time" name="midi" value="${s.times.midi}"></label>
         <label>Soir <input type="time" name="soir" value="${s.times.soir}"></label>
         <label>Week-end <input type="time" name="weekend" value="${s.times.weekend}"></label>
+      </div>
+      <h2>Objectif de saison</h2>
+      <p class="small muted">Tes cycles s'enchaînent en blocs (base, force, force-endurance, performance) jusqu'à deux semaines d'affûtage avant la date. Laisse la date vide pour garder les cycles de 4 semaines.</p>
+      <div class="grid3">
+        <label>Cotation <select name="goalGrade">${GRADES.slice(1).map((g) => `<option ${g === (s.goal?.grade || '7a') ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+        <label>En <select name="goalKind">${['voie', 'bloc'].map((k) => `<option value="${k}" ${k === (s.goal?.kind || 'voie') ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
+        <label>Pour le <input type="date" name="goalDate" value="${s.goal?.date || ''}"></label>
       </div>
       <h2>Mes accès</h2>
       <p class="small muted">Sans abonnement, les séances sont remplacées par des versions à la maison (barre de traction, haltère, gilet lesté, pompes). Sans course, le cardio passe sur vélo ou rameur en salle, ou en circuit à la maison.</p>
@@ -1298,9 +1348,33 @@ document.addEventListener('submit', (e) => {
     s.sound = !!fd.get('sound');
     s.vibrate = !!fd.get('vibrate');
     s.voice = !!fd.get('voice');
-    persist(); render(); toast('Réglages enregistrés.');
+    const msg = saveGoal(fd);
+    persist(); render(); toast(msg || 'Réglages enregistrés.', msg ? 5000 : 3500);
   }
 });
+
+// Objectif de saison : le plan démarre la semaine où il est fixé, depuis ta meilleure cotation récente.
+function saveGoal(fd) {
+  const s = state.settings;
+  const date = fd.get('goalDate');
+  if (!date) {
+    if (!s.goal) return '';
+    s.goal = null;
+    return 'Objectif retiré : retour aux cycles de 4 semaines.';
+  }
+  const now = new Date();
+  const soon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 21);
+  if (date < ymd(soon)) return 'Choisis une date dans au moins 3 semaines pour que le plan ait le temps de s\'enchaîner.';
+  const kind = fd.get('goalKind');
+  const prev = s.goal?.kind === kind ? s.goal : null;
+  s.goal = {
+    grade: fd.get('goalGrade'), kind, date,
+    from: prev?.from || ymd(mondayOf(now)),
+    fromGrade: prev?.fromGrade || recentMax(state, kind) || GRADES[state.adapt.gradeIdx],
+  };
+  const plan = seasonPlan(state);
+  return `Objectif ${s.goal.grade} en ${kind} : ${plan.blocks.map((b) => `${BLOCKS[b.phase].name.toLowerCase()} (${b.to - b.from + 1} sem.)`).join(', ')}.`;
+}
 
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') e.currentTarget.hidden = true; });
 

@@ -260,6 +260,16 @@ try {
   check(!(await page.isChecked('input[name=voice]')), 'réglage des annonces vocales');
   await shot('5-reglages');
 
+  // Objectif de saison : les cycles deviennent des blocs jusqu'à la date.
+  await page.fill('input[name=goalDate]', '2027-06-12');
+  await page.click('[data-form="settings"] button.primary');
+  check((await page.textContent('#toast')).includes('affûtage'), 'plan de saison annoncé');
+  check((await page.textContent('#week-badge')).includes('Base'), 'bloc de la semaine dans l\'en-tête');
+  await page.click('nav [data-go="stats"]');
+  const season = await page.textContent('.season-card');
+  check(season.includes('7a en voie') && season.includes('Force-endurance'), 'carte objectif de saison');
+  check((await page.$$('.season-card .blk')).length === 5, 'cinq blocs sur la frise');
+
   // Persistance après rechargement.
   await page.reload();
   await page.click('nav [data-go="stats"]');
