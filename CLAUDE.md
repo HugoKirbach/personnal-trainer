@@ -15,6 +15,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 ## Règles
 
 - Aucune dépendance ni étape de build : modules ES servis tels quels. Garder ça.
+- Accès salle (`settings.access`) : sans abonnement, `resolveKey` remplace les séances par leurs versions maison (`*Maison`). Le mode express (`state.express`) remplace une séance par une version de 20 à 30 min à la maison. Pas de dips à la maison.
 - Précautions santé d'Hugo : pas de poutre avant la semaine 5, mobilité nuque et dos à chaque séance d'escalade, éviter l'escalade deux jours de suite.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 

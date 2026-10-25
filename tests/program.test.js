@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
+import { resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd } from '../js/program.js';
 
 const baseState = () => ({
-  settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' } },
+  settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
   adapt: { escalade: 1, muscu: 1, cardio: 1, gradeIdx: 3 },
   logs: [],
   moves: {},
@@ -84,4 +84,55 @@ test('le volume reste dans les bornes', () => {
 
 test('la séance de 5 jours comprend du fractionné', () => {
   assert.ok(SCHEDULES[5].some((s) => s.key === 'fractionne'));
+});
+
+const homeState = () => ({ ...baseState(), settings: { ...baseState().settings, access: { escalade: false, muscu: false } } });
+
+test('sans abonnement, toutes les séances passent à la maison', () => {
+  for (const n of [3, 4, 5]) {
+    const st = homeState();
+    st.settings.sessionsPerWeek = n;
+    weekSessions(parseYmd('2026-10-26'), st).forEach((s) => {
+      if (s.type !== 'cardio') assert.ok(s.home, `${s.key} devrait être à la maison`);
+    });
+  }
+  const mixed = baseState();
+  mixed.settings.access = { escalade: true, muscu: false };
+  assert.equal(resolveKey('bloc', mixed), 'bloc');
+  assert.equal(resolveKey('haut', mixed), 'hautMaison');
+});
+
+test('aucun dips dans les séances maison et express', () => {
+  const st = homeState();
+  for (const key of TEMPLATE_KEYS) {
+    for (const express of [false, true]) {
+      const s = buildSession(key, parseYmd('2026-12-02'), st, express);
+      if (!s.home) continue;
+      s.exercises.forEach((e) => assert.ok(!/dips/i.test(e.name), `${s.variant} : ${e.name}`));
+    }
+  }
+});
+
+test('la version express dure entre 20 et 30 minutes', () => {
+  const st = baseState();
+  for (const key of TEMPLATE_KEYS.filter((k) => !k.startsWith('express'))) {
+    const s = buildSession(key, parseYmd('2026-10-28'), st, true);
+    assert.ok(s.express && s.variant.startsWith('express'));
+    const min = Number(s.duration.match(/\d+/)[0]);
+    assert.ok(min >= 20 && min <= 30, `${key} : ${s.duration}`);
+  }
+});
+
+test('le mode express est mémorisé par séance', () => {
+  const st = baseState();
+  st.express = { '2026-10-28#1': true };
+  const list = weekSessions(parseYmd('2026-10-26'), st);
+  assert.ok(list[1].express);
+  assert.ok(!list[0].express);
+});
+
+test('une séance d\'escalade maison ne change pas le niveau cible', () => {
+  const st = baseState();
+  for (let i = 0; i < 3; i++) { const l = { type: 'escalade', feeling: 'facile', completed: true, home: true }; st.logs.push(l); adapt(st, l); }
+  assert.equal(st.adapt.gradeIdx, 3);
 });

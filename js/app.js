@@ -153,15 +153,16 @@ function sessionCard(s) {
   const id = `${s.date}#${s.index}`;
   const done = state.checks[id] || [];
   const log = logFor(s);
-  const hasRun = s.type === 'cardio' || ['bas', 'full'].includes(s.key);
+  const hasRun = s.run;
   return `<section class="card session" style="--accent:${TYPES[s.type].color}">
     <div class="session-head">
-      <span class="pill">${TYPES[s.type].label}</span>
+      <span><span class="pill">${TYPES[s.type].label}</span>${s.home ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
       <span class="muted">${slotLabel(s.slot)} · ${s.time} · ${s.duration}</span>
     </div>
     <h2>${esc(s.title)}</h2>
     <p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>
     <p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>
+    ${log ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
@@ -173,7 +174,7 @@ function sessionCard(s) {
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
         <h3>Comment ça s'est passé ?</h3>
-        ${feedbackFields(id, false, s.type, hasRun)}
+        ${feedbackFields(id, false, s.home ? 'maison' : s.type, hasRun)}
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
@@ -201,7 +202,7 @@ function submitLog(form) {
   } else {
     const date = parseYmd(form.dataset.date);
     const s = weekSessions(mondayOf(date), state).find((x) => x.index === Number(form.dataset.index));
-    base = { type: s.type, title: s.title, date: s.date, sessionIndex: s.index, key: s.key };
+    base = { type: s.type, title: s.title, date: s.date, sessionIndex: s.index, key: s.key, variant: s.variant, home: s.home };
   }
   const log = {
     ...base,
@@ -356,6 +357,10 @@ function renderSettings() {
         <label>Soir <input type="time" name="soir" value="${s.times.soir}"></label>
         <label>Week-end <input type="time" name="weekend" value="${s.times.weekend}"></label>
       </div>
+      <h2>Mes accès</h2>
+      <p class="small muted">Sans abonnement, les séances sont remplacées par des versions à la maison (barre de traction, haltères, gilet lesté, pompes).</p>
+      <label class="row"><input type="checkbox" name="accessEscalade" ${s.access.escalade ? 'checked' : ''}> Salle d'escalade</label>
+      <label class="row"><input type="checkbox" name="accessMuscu" ${s.access.muscu ? 'checked' : ''}> Salle de muscu</label>
       <h2>Chrono</h2>
       <label class="row"><input type="checkbox" name="sound" ${s.sound ? 'checked' : ''}> Signal sonore</label>
       <label class="row"><input type="checkbox" name="vibrate" ${s.vibrate ? 'checked' : ''}> Vibration</label>
@@ -410,6 +415,12 @@ document.addEventListener('click', async (e) => {
   if (d.t === 'reset') { timer.reset(timer.cfg); releaseWake(); return paintTimer(); }
   if (d.t === 'lap') return timer.lap();
   if (d.t === 'skip') return timer.skip();
+  if (d.express) {
+    state.express ||= {};
+    if (state.express[d.express]) delete state.express[d.express]; else state.express[d.express] = true;
+    delete state.checks[d.express];
+    persist(); return render();
+  }
   if (d.week) { weekOffset += Number(d.week); return render(); }
   if (d.open) { const [date, idx] = d.open.split('#'); openSession = { date, index: Number(idx) }; render(); return window.scrollTo(0, 0); }
   if (d.action === 'close-session') { openSession = null; return render(); }
@@ -492,6 +503,7 @@ document.addEventListener('submit', (e) => {
     const start = fd.get('startDate');
     if (start) s.startDate = ymd(mondayOf(parseYmd(start)));
     s.times = { midi: fd.get('midi'), soir: fd.get('soir'), weekend: fd.get('weekend') };
+    s.access = { escalade: !!fd.get('accessEscalade'), muscu: !!fd.get('accessMuscu') };
     s.sound = !!fd.get('sound');
     s.vibrate = !!fd.get('vibrate');
     persist(); render(); toast('Réglages enregistrés.');

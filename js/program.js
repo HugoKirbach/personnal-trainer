@@ -121,7 +121,8 @@ export function weekSessions(monday, state) {
     const date = new Date(monday);
     date.setDate(date.getDate() + day);
     const slot = day >= 5 ? 'weekend' : s.slot;
-    return { ...buildSession(s.key, date, state), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
+    const express = !!state.express?.[`${ymd(date)}#${i}`];
+    return { ...buildSession(s.key, date, state, express), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
   });
 }
 
@@ -129,14 +130,29 @@ export function sessionsOn(date, state) {
   return weekSessions(mondayOf(date), state).filter((s) => s.date === ymd(date));
 }
 
-export function buildSession(key, date, state) {
+// Choisit la variante réelle d'une séance selon les accès en salle et le mode express.
+export function resolveKey(key, state, express = false) {
+  const type = TEMPLATES[key].type;
+  if (express) return { escalade: 'expressGrimpe', muscu: 'expressRenfo', cardio: 'expressCourse' }[type];
+  if (TEMPLATES[key].home) return key;
+  const access = state.settings.access || {};
+  if (type === 'escalade' && !access.escalade) return key === 'bloc' ? 'blocMaison' : 'voieMaison';
+  if (type === 'muscu' && !access.muscu) return `${key}Maison`;
+  return key;
+}
+
+export function buildSession(key, date, state, express = false) {
   const info = weekInfo(date, state.settings.startDate);
   const a = state.adapt;
-  const t = TEMPLATES[key];
+  const variant = resolveKey(key, state, express);
+  const t = TEMPLATES[variant];
   const type = t.type;
   const f = info.mult * (a[type] ?? 1);
   const ctx = { f, info, g: a.gradeIdx, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
-  return { key, type, title: t.title, duration: t.duration, phase: info.phase, week: info.week, exercises: t.build(ctx) };
+  return {
+    key, variant, type, express, home: !!t.home, run: !!t.run,
+    title: t.title, duration: t.duration, phase: info.phase, week: info.week, exercises: t.build(ctx),
+  };
 }
 
 const minutes = (base, f) => Math.round((base * f) / 5) * 5;
@@ -176,7 +192,7 @@ const TEMPLATES = {
       { name: 'Développé couché haltères', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
       { name: 'Rowing assis poulie, prise neutre', detail: `${sets(3)} × 10, épaules basses. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
       { name: 'Développé épaules haltères assis', detail: `${sets(3)} × 10. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
-      { name: 'Dips assistés ou pompes', detail: `${sets(3)} × 8 à 12. Repos 75 s.`, timer: { mode: 'countdown', seconds: 75, label: 'Repos' } },
+      { name: 'Pompes ou dips assistés (machine)', detail: `${sets(3)} × 8 à 12. Repos 75 s.`, timer: { mode: 'countdown', seconds: 75, label: 'Repos' } },
       { name: 'Face pull à la poulie', detail: `${sets(3)} × 15, léger. Excellent pour la nuque et les épaules de grimpeur. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
       { name: 'Rotations externes', detail: `${sets(2)} × 15 par bras, poulie basse ou élastique. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
       { name: 'Extensions des doigts (élastique)', detail: `${sets(2)} × 20. Antagonistes des fléchisseurs, protège les poulies.` },
@@ -184,7 +200,7 @@ const TEMPLATES = {
     ],
   },
   bas: {
-    type: 'muscu', title: 'Muscu bas du corps et course', duration: '1h20',
+    type: 'muscu', title: 'Muscu bas du corps et course', duration: '1h20', run: true,
     build: ({ f, sets }) => [
       { name: 'Échauffement', detail: '5 min de vélo, squats au poids du corps, mobilité hanches et dos.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
       { name: 'Presse à cuisses ou goblet squat', detail: `${sets(3)} × 10. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
@@ -196,7 +212,7 @@ const TEMPLATES = {
     ],
   },
   full: {
-    type: 'muscu', title: 'Muscu corps complet et course', duration: '1h20',
+    type: 'muscu', title: 'Muscu corps complet et course', duration: '1h20', run: true,
     build: ({ f, sets }) => [
       { name: 'Échauffement', detail: '5 min de rameur, mobilité nuque, épaules et hanches.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
       { name: 'Goblet squat ou presse', detail: `${sets(3)} × 10. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos' } },
@@ -209,11 +225,109 @@ const TEMPLATES = {
     ],
   },
   fractionne: {
-    type: 'cardio', title: 'Course fractionnée', duration: '50 min',
+    type: 'cardio', title: 'Course fractionnée', duration: '50 min', run: true,
     build: ({ sets }) => [
       { name: 'Footing d\'échauffement', detail: '15 min très facile, puis 3 accélérations progressives.', timer: { mode: 'countdown', seconds: 900, label: 'Échauffement' } },
       { name: '30/30', detail: `${sets(2)} séries de ${sets(8)} × (30 s vite / 30 s trot). 3 min de trot entre les séries.`, timer: { mode: 'interval', work: 30, rest: 30, rounds: sets(8), sets: sets(2), setRest: 180, label: '30/30' } },
       { name: 'Retour au calme', detail: '10 min de footing lent, puis étirements mollets et ischios.', timer: { mode: 'countdown', seconds: 600, label: 'Retour au calme' } },
+    ],
+  },
+
+  // ---------- À la maison : barre de traction, haltères 10 kg, gilet lesté 8 kg, tapis ----------
+  blocMaison: {
+    type: 'escalade', title: 'Force grimpe à la maison', duration: '1h', home: true,
+    build: ({ info, sets }) => [
+      MOBILITY,
+      { name: 'Activation à la barre', detail: '2 tours : 10 tirages d\'omoplates bras tendus (scap pulls) + 10 cercles de bras.' },
+      { name: 'Suspensions actives', detail: `${sets(4)} × 20 s à la barre, épaules engagées (pas avachi). 40 s de repos. Prise large et confortable, pas les doigts.`, timer: { mode: 'interval', work: 20, rest: 40, rounds: sets(4), label: 'Suspensions' } },
+      info.week >= 5 && info.phaseIndex !== 3
+        ? { name: 'Tractions lestées', detail: `${sets(4)} × 3 à 5 avec le gilet de 8 kg, amplitude complète. Repos 2 min 30.`, timer: { mode: 'countdown', seconds: 150, label: 'Repos tractions' } }
+        : { name: 'Tractions', detail: `${sets(4)} × 5 à 8, amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve. Repos 2 min.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos tractions' } },
+      { name: 'Tractions négatives', detail: `${sets(3)} × 3, descente en 5 secondes. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Relevés de genoux suspendu', detail: `${sets(3)} × 8 à 10, sans balancer. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Pompes', detail: `${sets(3)} × 15. Antagonistes des tractions. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Oiseau haltères', detail: `${sets(3)} × 15, buste penché, léger. Bon pour la nuque et le haut du dos. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
+      { name: 'Gainage creux (hollow)', detail: `${sets(3)} × 30 s, bas du dos plaqué au sol.`, timer: { mode: 'interval', work: 30, rest: 30, rounds: sets(3), label: 'Hollow' } },
+      { name: 'Retour au calme', detail: 'Étirements avant-bras, pectoraux, nuque et dos. 5 min.' },
+    ],
+  },
+  voieMaison: {
+    type: 'escalade', title: 'Endurance grimpe à la maison', duration: '50 min', home: true,
+    build: ({ sets }) => [
+      MOBILITY,
+      { name: 'Circuit endurance', detail: `${sets(4)} tours sans pause : 30 s suspendu, 5 tractions, 10 pompes, 30 s de planche. 2 min de repos entre les tours.`, timer: { mode: 'countdown', seconds: 120, label: 'Repos circuit' } },
+      { name: 'Pyramide de tractions', detail: '1, 2, 3, 4, 3, 2, 1 tractions. Repos = le temps que tu viens de passer à tirer. Arrête la pyramide si les tractions deviennent moches.' },
+      { name: 'Superman', detail: `${sets(3)} × 12 lents, regard vers le sol pour protéger la nuque.` },
+      { name: 'Extensions de poignets haltère', detail: `${sets(2)} × 15 par bras, léger. Antagonistes des avant-bras.` },
+      { name: 'Retour au calme', detail: 'Étirements avant-bras, épaules, nuque et dos.' },
+    ],
+  },
+  hautMaison: {
+    type: 'muscu', title: 'Haut du corps à la maison', duration: '1h', home: true,
+    build: ({ info, sets }) => [
+      { name: 'Échauffement', detail: '2 min de jumping jacks, cercles de bras, 10 pompes inclinées sur une chaise.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
+      { name: info.week >= 5 ? 'Pompes lestées' : 'Pompes', detail: `${sets(4)} × 12 à 15${info.week >= 5 ? ' avec le gilet de 8 kg' : ''}, descente en 2 secondes. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Rowing haltère un bras', detail: `${sets(3)} × 12 par bras, pause d'une seconde en haut. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Pompes piquées (épaules)', detail: `${sets(3)} × 8 à 10, hanches hautes, tête vers le sol. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Développé épaules haltères debout', detail: `${sets(3)} × 12. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Élévations latérales', detail: `${sets(3)} × 15, lent. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
+      { name: 'Oiseau haltères', detail: `${sets(3)} × 15. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
+      { name: 'Pompes diamant (triceps)', detail: `${sets(2)} × 8 à 12, mains rapprochées. Remplace les dips. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Curl haltères', detail: `${sets(2)} × 12, tempo lent. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
+      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s, menton rentré.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
+    ],
+  },
+  basMaison: {
+    type: 'muscu', title: 'Bas du corps à la maison et course', duration: '1h15', home: true, run: true,
+    build: ({ f, sets }) => [
+      { name: 'Échauffement', detail: 'Squats au poids du corps, fentes, mobilité des hanches et du dos. 5 min.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
+      { name: 'Goblet squat lesté', detail: `${sets(4)} × 15 avec l'haltère et le gilet, descente en 3 secondes pour compenser la charge légère. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Fentes bulgares', detail: `${sets(3)} × 10 par jambe, pied arrière sur une chaise. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Soulevé de terre roumain sur une jambe', detail: `${sets(3)} × 10 par jambe, haltère en main, dos neutre. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Hip thrust au sol lesté', detail: `${sets(3)} × 15, gilet et haltère sur les hanches. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Mollets sur une marche', detail: `${sets(3)} × 20, sur une jambe si c'est trop facile.` },
+      { name: 'Gainage latéral et dead bug', detail: `${sets(3)} tours : 30 s par côté + 10 dead bugs lents.`, timer: { mode: 'interval', work: 30, rest: 15, rounds: sets(3) * 2, label: 'Gainage' } },
+      { name: 'Course dehors', detail: `${minutes(20, f)} min en endurance, en aisance respiratoire.`, timer: { mode: 'countdown', seconds: minutes(20, f) * 60, label: 'Course' } },
+    ],
+  },
+  fullMaison: {
+    type: 'muscu', title: 'Corps complet à la maison et course', duration: '1h10', home: true, run: true,
+    build: ({ f, sets }) => [
+      { name: 'Échauffement', detail: 'Jumping jacks, mobilité nuque, épaules et hanches. 5 min.', timer: { mode: 'countdown', seconds: 300, label: 'Échauffement' } },
+      { name: 'Goblet squat lesté', detail: `${sets(3)} × 15, gilet et haltère. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Pompes', detail: `${sets(3)} × 12 à 15. Repos 75 s.`, timer: { mode: 'countdown', seconds: 75, label: 'Repos' } },
+      { name: 'Rowing haltère un bras', detail: `${sets(3)} × 12 par bras. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Fentes bulgares', detail: `${sets(3)} × 10 par jambe. Repos 90 s.`, timer: { mode: 'countdown', seconds: 90, label: 'Repos' } },
+      { name: 'Développé épaules haltères', detail: `${sets(3)} × 12. Repos 60 s.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos' } },
+      { name: 'Oiseau haltères', detail: `${sets(3)} × 15, léger. Repos 45 s.`, timer: { mode: 'countdown', seconds: 45, label: 'Repos' } },
+      { name: 'Gainage : planche', detail: `${sets(3)} × 40 s.`, timer: { mode: 'interval', work: 40, rest: 20, rounds: sets(3), label: 'Planche' } },
+      { name: 'Course dehors', detail: `${minutes(15, f)} min en endurance.`, timer: { mode: 'countdown', seconds: minutes(15, f) * 60, label: 'Course' } },
+    ],
+  },
+
+  // ---------- Express : 20 à 30 min, à la maison ----------
+  expressGrimpe: {
+    type: 'escalade', title: 'Express grimpe à la maison', duration: '25 min', home: true,
+    build: ({ sets }) => [
+      { name: 'Mobilité express', detail: 'Nuque, épaules, poignets, chat-vache. 30 s par mouvement.', timer: { mode: 'interval', work: 30, rest: 10, rounds: 4, label: 'Mobilité' } },
+      { name: 'Circuit barre', detail: `${clamp(sets(4), 3, 5)} tours : 5 à 8 tractions, 20 s suspendu, 10 pompes, 30 s de gainage creux. 1 min de repos entre les tours.`, timer: { mode: 'countdown', seconds: 60, label: 'Repos circuit' } },
+      { name: 'Étirements', detail: 'Avant-bras, pectoraux, nuque. 3 min.' },
+    ],
+  },
+  expressRenfo: {
+    type: 'muscu', title: 'Express renfo à la maison', duration: '25 min', home: true,
+    build: () => [
+      { name: 'Échauffement', detail: 'Jumping jacks, cercles de bras, squats au poids du corps. 3 min.', timer: { mode: 'countdown', seconds: 180, label: 'Échauffement' } },
+      { name: 'EMOM 20 min', detail: 'Chaque minute, un exercice, puis repos jusqu\'à la minute suivante. 4 tours de : 1) 12 pompes, 2) 15 goblet squats, 3) 10 rowings haltère par bras, 4) 10 fentes par jambe, 5) 40 s de planche.', timer: { mode: 'interval', work: 60, rest: 0, rounds: 20, label: 'EMOM' } },
+      { name: 'Étirements', detail: 'Hanches, pectoraux, nuque. 2 min.' },
+    ],
+  },
+  expressCourse: {
+    type: 'cardio', title: 'Course express', duration: '25 min', run: true,
+    build: () => [
+      { name: 'Footing d\'échauffement', detail: '7 min très facile.', timer: { mode: 'countdown', seconds: 420, label: 'Échauffement' } },
+      { name: '30/30', detail: '10 × (30 s vite / 30 s trot). Pas le temps de sortir ? Remplace par 2 tabatas : montées de genoux puis squats sautés.', timer: { mode: 'interval', work: 30, rest: 30, rounds: 10, label: '30/30' } },
+      { name: 'Retour au calme', detail: '5 min de marche ou de footing lent.', timer: { mode: 'countdown', seconds: 300, label: 'Retour au calme' } },
     ],
   },
 };
@@ -233,7 +347,7 @@ export function adapt(state, log) {
   if (a[log.type] > before) msgs.push(`${TYPES[log.type].label} : volume légèrement augmenté.`);
   if (a[log.type] < before) msgs.push(`${TYPES[log.type].label} : volume allégé pour les prochaines séances.`);
 
-  if (log.type === 'escalade') {
+  if (log.type === 'escalade' && !log.home) {
     const recent = state.logs.filter((l) => l.type === 'escalade').slice(-2);
     if (log.pain) {
       a.gradeIdx = clamp(a.gradeIdx - 1, 1, GRADES.length - 2);

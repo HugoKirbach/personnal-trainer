@@ -13,11 +13,13 @@ export function defaults() {
       vibrate: true,
       notifications: false,
       reminderMinutes: 30,
+      access: { escalade: false, muscu: false },
     },
     adapt: { escalade: 1, muscu: 1, cardio: 1, gradeIdx: 3 },
     logs: [],
     moves: {},
     checks: {},
+    express: {},
   };
 }
 
@@ -30,7 +32,12 @@ export function load() {
     return {
       ...base,
       ...s,
-      settings: { ...base.settings, ...s.settings, times: { ...base.settings.times, ...s.settings?.times } },
+      settings: {
+        ...base.settings,
+        ...s.settings,
+        times: { ...base.settings.times, ...s.settings?.times },
+        access: { ...base.settings.access, ...s.settings?.access },
+      },
       adapt: { ...base.adapt, ...s.adapt },
     };
   } catch {

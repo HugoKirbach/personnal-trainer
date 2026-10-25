@@ -16,6 +16,8 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Semaine** : le planning, avec la possibilité de déplacer une séance.
 - **Chrono** : chronomètre avec tours, minuteur de repos, intervalles (poutre, tabata, 30/30, gainage), son et vibration, écran maintenu allumé.
 - **Suivi** : séances par semaine, ressenti, progression en voie vers le 7a, historique.
+- **Salle ou maison** : coche dans Réglages tes abonnements (escalade, muscu). Sans abonnement, les séances passent en version maison (barre de traction, haltères, gilet lesté, pompes).
+- **Version express** : un bouton sur la séance du jour la remplace par une séance de 25 min à la maison.
 - **Programme adaptatif** : cycles de 4 semaines, volume et niveau cible ajustés selon le ressenti.
 
 Les données restent sur le téléphone (export et import JSON dans Réglages).

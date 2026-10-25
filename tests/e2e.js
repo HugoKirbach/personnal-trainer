@@ -21,7 +21,22 @@ try {
   await page.goto(`http://localhost:${PORT}/`);
   await page.waitForSelector('.session');
   check((await page.textContent('#week-badge')).includes('Semaine 1'), 'badge de semaine');
-  check((await page.textContent('.session h2')).includes('Escalade bloc'), 'séance du mercredi = bloc');
+  check((await page.textContent('.session h2')).includes('Force grimpe à la maison'), 'sans abonnement : séance maison');
+  await shot('0-maison');
+
+  // Version express puis retour à la séance prévue.
+  await page.click('[data-express]');
+  check((await page.textContent('.session h2')).includes('Express'), 'version express');
+  await shot('0b-express');
+  await page.click('[data-express]');
+
+  // Active les accès en salle.
+  await page.click('nav [data-go="settings"]');
+  await page.check('input[name=accessEscalade]');
+  await page.check('input[name=accessMuscu]');
+  await page.click('[data-form="settings"] button.primary');
+  await page.click('nav [data-go="today"]');
+  check((await page.textContent('.session h2')).includes('Escalade bloc'), 'avec abonnement : séance de bloc');
   await shot('1-aujourdhui');
 
   // Coche un exercice et lance le chrono depuis la séance.
