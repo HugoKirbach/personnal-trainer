@@ -164,7 +164,7 @@ export function weekSessions(monday, state) {
     const id = `${ymd(date)}#${i}`;
     const slot = day >= 5 ? 'weekend' : (state.slots?.[id] ?? s.slot);
     const express = !!state.express?.[id];
-    return { ...buildSession(s.key, date, state, express), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
+    return { ...buildSession(s.key, date, state, express, state.durations?.[id]), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
   });
 }
 
@@ -264,6 +264,8 @@ const STRAIN = {
   'jumping-jacks': ['genou'], burpees: ['genou', 'poignet', 'epaule'], 'shadow-boxing': ['epaule'],
   'crunch-inverse': ['dos'], 'russian-twist': ['dos'], 'mountain-climbers': ['poignet', 'epaule'], 'crunch-poulie': ['dos', 'nuque'],
   'chaise-romaine': ['dos'], 'bucheron-poulie': ['dos', 'epaule'], 'roue-abdos': ['dos', 'epaule'], 'extensions-lombaires': ['dos'],
+  'pompes-declinees': ['poignet', 'epaule'], 'floor-press': ['epaule'], 'rowing-inverse': ['epaule', 'coude'], 'chin-up': ['coude', 'epaule'],
+  'tirage-vertical': ['epaule', 'coude'], 'extension-triceps': ['coude', 'epaule'], 'pistol-assiste': ['genou'], 'step-up': ['genou'], 'good-morning': ['dos'],
 };
 export const strainOf = (info) => [...new Set([].concat(info || []).flatMap((i) => STRAIN[i] || []))];
 
@@ -308,6 +310,147 @@ function withoutPain(items, zones) {
     return [e];
   });
   return { kept, removed: [...new Set(removed)] };
+}
+
+// ---------- Remplacer un exercice ----------
+// Alternatives équivalentes, rangées par mouvement. where : home (matériel maison), gym (salle) ou any.
+// reps absent ou keepReps : on garde la prescription d'origine (tractions calées sur la prise de référence).
+// load : une charge, ou { home, gym } selon le lieu. keepLoad : on garde celle d'origine (gilet des tractions lestées).
+const SWAP_GROUPS = {
+  push: [
+    { name: 'Pompes', info: 'pompes', where: 'any', reps: '10 à 15' },
+    { name: 'Pompes pieds surélevés', info: 'pompes-declinees', where: 'any', reps: '8 à 12', note: 'Pieds sur une chaise, corps gainé.' },
+    { name: 'Développé au sol un bras', info: 'floor-press', where: 'home', reps: '10 à 12 par bras', load: DB(8), note: 'Allongé au sol, coude qui touche le sol à chaque répétition.' },
+    { name: 'Développé couché haltères', info: 'developpe-couche-halteres', where: 'gym', reps: '8 à 12', load: GYM(2) },
+  ],
+  row: [
+    { name: 'Rowing haltère un bras', info: 'rowing-haltere', where: 'any', reps: '10 à 15 par bras', load: { home: DB(10), gym: GYM(2) }, note: 'Pause d\'une seconde en haut.' },
+    { name: 'Rowing inversé sous une table', info: 'rowing-inverse', where: 'any', reps: '8 à 12', note: 'Table bien stable (ou barre basse en salle), corps gainé.' },
+    { name: 'Rowing assis poulie, prise neutre', info: 'rowing-poulie', where: 'gym', reps: '8 à 12', load: GYM(5), note: 'Épaules basses.' },
+  ],
+  pull: [
+    { name: 'Tractions', info: 'tractions', where: 'any', keepReps: true, keepLoad: true, note: 'Amplitude complète, sans élan.' },
+    { name: 'Tractions supination', info: 'chin-up', where: 'any', keepReps: true, keepLoad: true, note: 'Paumes vers toi, amplitude complète.' },
+    { name: 'Tractions négatives', info: 'tractions-negatives', where: 'any', reps: '3 à 5', note: 'Descente en 5 secondes.' },
+    { name: 'Tirage vertical à la poulie', info: 'tirage-vertical', where: 'gym', reps: '8 à 12', load: GYM(5), note: 'Poitrine sortie, coudes vers les hanches.' },
+  ],
+  press: [
+    { name: 'Développé épaules un bras', info: 'developpe-epaules', where: 'home', reps: '8 à 12 par bras', load: DB(6), note: 'Debout et gainé.' },
+    { name: 'Développé épaules haltères assis', info: 'developpe-epaules', where: 'gym', reps: '8 à 12', load: GYM(2) },
+    { name: 'Pompes piquées (épaules)', info: 'pompes-piquees', where: 'any', reps: '8 à 10', note: 'Hanches hautes, tête vers le sol.' },
+  ],
+  lateral: [
+    { name: 'Élévations latérales un bras', info: 'elevations-laterales', where: 'home', reps: '12 à 15 par bras', load: DB(3), note: 'Lent, sans élan.' },
+    { name: 'Élévations latérales à la poulie', info: 'elevations-laterales', where: 'gym', reps: '12 à 15 par bras', load: GYM(2.5), note: 'Lent, sans élan.' },
+    { name: 'Y-T-W au sol', info: 'ytw', where: 'any', reps: '8 de chaque lettre', note: 'Allongé sur le ventre, pouces vers le plafond.' },
+  ],
+  rear: [
+    { name: 'Oiseau un bras', info: 'oiseau', where: 'home', reps: '12 à 15 par bras', load: DB(3), note: 'Main libre sur une chaise.' },
+    { name: 'Face pull à la poulie', info: 'face-pull', where: 'gym', reps: '15', load: GYM(2.5), note: 'Léger.' },
+    { name: 'Y-T-W au sol', info: 'ytw', where: 'any', reps: '8 de chaque lettre', note: 'Allongé sur le ventre, pouces vers le plafond.' },
+  ],
+  triceps: [
+    { name: 'Pompes diamant (triceps)', info: 'pompes-diamant', where: 'any', reps: '8 à 12', note: 'Mains rapprochées.' },
+    { name: 'Extension triceps un bras au-dessus de la tête', info: 'extension-triceps', where: 'home', reps: '10 à 15 par bras', load: DB(5), note: 'Coude pointé vers le plafond.' },
+    { name: 'Extension triceps à la poulie', info: 'extension-triceps', where: 'gym', reps: '10 à 15', load: GYM(2.5) },
+    { name: 'Dips assistés (machine)', info: 'dips-machine', where: 'gym', reps: '8 à 12' },
+  ],
+  biceps: [
+    { name: 'Curl un bras', info: 'curl', where: 'home', reps: '8 à 12 par bras', load: DB(7), note: 'Tempo lent.' },
+    { name: 'Curl marteau un bras', info: 'curl', where: 'home', reps: '8 à 12 par bras', load: DB(7), note: 'Pouce vers le haut, tempo lent.' },
+    { name: 'Curl à la poulie', info: 'curl', where: 'gym', reps: '10 à 12', load: GYM(2.5) },
+    { name: 'Tractions supination', info: 'chin-up', where: 'any', reps: '5 à 8', note: 'Paumes vers toi.' },
+  ],
+  squat: [
+    { name: 'Goblet squat lesté', info: 'goblet-squat', where: 'home', keepReps: true, note: 'Haltère 10 kg et gilet 8 kg, descente en 3 secondes.' },
+    { name: 'Step-up lesté sur une chaise', info: 'step-up', where: 'home', reps: '10 à 12 par jambe', note: 'Gilet 8 kg, haltère 10 kg à la main. Pousse avec la jambe du haut.' },
+    { name: 'Squat sur une jambe assisté', info: 'pistol-assiste', where: 'any', reps: '6 à 10 par jambe', note: 'Une main sur un appui, descente contrôlée.' },
+    { name: 'Presse à cuisses', info: 'presse', where: 'gym', reps: '8 à 12', load: GYM(5) },
+    { name: 'Goblet squat', info: 'goblet-squat', where: 'gym', reps: '8 à 12', load: GYM(2) },
+  ],
+  lunge: [
+    { name: 'Fentes bulgares', info: 'fentes-bulgares', where: 'any', reps: '10 par jambe', note: 'Pied arrière sur une chaise.' },
+    { name: 'Fentes marchées', info: 'fentes-marchees', where: 'any', reps: '10 par jambe' },
+    { name: 'Fentes arrière', info: 'fentes-marchees', where: 'any', reps: '10 par jambe', note: 'Grand pas en arrière, buste droit.' },
+    { name: 'Step-up lesté sur une chaise', info: 'step-up', where: 'home', reps: '10 à 12 par jambe', note: 'Gilet 8 kg. Pousse avec la jambe du haut.' },
+  ],
+  hinge: [
+    { name: 'Soulevé de terre roumain sur une jambe', info: 'souleve-roumain-unilateral', where: 'home', reps: '10 à 12 par jambe', load: DB(10), note: 'Dos neutre.' },
+    { name: 'Good morning avec le gilet', info: 'good-morning', where: 'home', reps: '12 à 15', note: 'Gilet 8 kg, dos neutre, genoux légèrement fléchis.' },
+    { name: 'Pont fessier sur une jambe', info: 'hip-thrust', where: 'any', reps: '12 par jambe' },
+    { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', where: 'gym', reps: '8 à 12', load: GYM(2), note: 'Dos neutre.' },
+  ],
+  glutes: [
+    { name: 'Hip thrust au sol lesté', info: 'hip-thrust', where: 'home', reps: '15', note: 'Gilet 8 kg et haltère 10 kg sur les hanches.' },
+    { name: 'Pont fessier sur une jambe', info: 'hip-thrust', where: 'any', reps: '12 par jambe' },
+    { name: 'Hip thrust machine', info: 'hip-thrust', where: 'gym', reps: '10 à 15', load: GYM(5) },
+  ],
+  hang: [
+    { name: 'Relevés de genoux suspendu', info: 'releves-genoux', where: 'any', reps: '8 à 10', note: 'Sans balancer.' },
+    { name: 'Crunch inversé', info: 'crunch-inverse', where: 'any', reps: '12 à 15' },
+    { name: 'Relevés de jambes à la chaise romaine', info: 'chaise-romaine', where: 'gym', reps: '10 à 12' },
+  ],
+  lowerBack: [
+    { name: 'Superman', info: 'superman', where: 'any', reps: '12 lents', note: 'Regard vers le sol pour protéger la nuque.' },
+    { name: 'Bird dog', info: 'bird-dog', where: 'any', reps: '10 par côté', note: 'Dos plat, mouvement lent.' },
+    { name: 'Extensions lombaires', info: 'extensions-lombaires', where: 'gym', reps: '12' },
+  ],
+  plank: [
+    { name: 'Gainage : planche', info: 'planche', where: 'any', timed: true, work: (p) => p.plank, note: 'Menton rentré.' },
+    { name: 'Gainage creux (hollow)', info: 'hollow', where: 'any', timed: true, work: () => 30, note: 'Bas du dos plaqué au sol.' },
+    { name: 'Dead bug', info: 'dead-bug', where: 'any', timed: false, reps: '10 lents', work: () => 45, note: 'Bas du dos plaqué au sol.' },
+  ],
+};
+const SWAP_GROUP_OF = {};
+Object.entries(SWAP_GROUPS).forEach(([g, list]) => list.forEach((a) => { SWAP_GROUP_OF[a.info] ||= g; }));
+Object.assign(SWAP_GROUP_OF, { hollow: 'plank', 'dead-bug': 'plank', 'step-up': 'lunge', ytw: 'rear', 'chin-up': 'pull' });
+export const SWAP_INFOS = Object.values(SWAP_GROUPS).flat().map((a) => a.info);
+
+const swapGroup = (e) => (!e.circuit && !e.inner && !e.setLabels && !e.test && !e.countUp ? SWAP_GROUP_OF[[].concat(e.info || [])[0]] : null);
+const fits = (a, where) => a.where === 'any' || a.where === where;
+
+function toAlt(e, a, where, p) {
+  const x = { ...e, name: a.name, info: a.info, note: a.note || '' };
+  delete x.label;
+  const load = a.keepLoad ? e.load : a.load?.tool ? a.load : a.load?.[where];
+  if (load) x.load = load; else delete x.load;
+  if (a.timed) { x.timed = true; delete x.reps; delete x.unit; } else if (a.timed === false || a.reps) delete x.timed;
+  if (a.reps && !a.keepReps) x.reps = a.reps;
+  if (a.work) x.work = a.work(p);
+  else if (x.timed !== e.timed) x.work = 40;
+  return x;
+}
+
+// Remplacement retenu pour un exercice : d'abord celui du jour, sinon celui choisi pour toujours.
+function applySwap(e, state, day, where, p) {
+  const group = swapGroup(e);
+  if (!group) return e;
+  const once = state.swaps?.[`${day}|${e.name}`];
+  const to = once ?? state.swaps?.[e.name];
+  const a = to && to !== e.name && SWAP_GROUPS[group].find((x) => x.name === to && fits(x, where));
+  if (!a) return { ...e, swap: { from: e.name, group } };
+  return { ...toAlt(e, a, where, p), swap: { from: e.name, group, to: a.name, once: !!once } };
+}
+
+// Alternatives proposées pour un exercice d'une séance (même mouvement, matériel du lieu, sans zone douloureuse).
+export function swapChoices(e, session, state) {
+  if (!e.swap) return [];
+  const where = session.home ? 'home' : 'gym';
+  const zones = Object.keys(activePains(state, session.date));
+  const p = prescriptions(latestBench(state));
+  return SWAP_GROUPS[e.swap.group]
+    .filter((a) => fits(a, where) && a.name !== e.name && a.name !== e.swap.from && !strainOf(a.info).some((z) => zones.includes(z)))
+    .map((a) => { const x = { sets: 1, ...toAlt(e, a, where, p) }; return { name: a.name, info: a.info, detail: describe(x) }; });
+}
+
+// always : remplace l'exercice dans toutes les séances ; sinon pour ce jour-là seulement. to = from : retour à l'original.
+export function setSwap(state, day, from, to, always = false) {
+  const swaps = { ...(state.swaps || {}) };
+  delete swaps[`${day}|${from}`];
+  if (to === from) delete swaps[from];
+  else if (always) swaps[from] = to;
+  else swaps[`${day}|${from}`] = to;
+  state.swaps = swaps;
 }
 
 // ---------- État de forme du jour ----------
@@ -360,9 +503,70 @@ function applyForm(items, level, { type, home, deload, notes }) {
   return items.map((e) => (picks.includes(e) ? { ...e, sets: e.sets + 1 } : e));
 }
 
+// ---------- Séance à la durée choisie ----------
+export const DURATION_CHOICES = [20, 30, 45, 60];
+const WARMUPS = ['mobilite', 'echauffement-general', 'grimpe-echauffement'];
+const firstInfo = (e) => [].concat(e.info || [])[0] || '';
+const isCooldown = (e) => /etirements/.test(firstInfo(e)) || e.name === 'Retour au calme';
+
+// Ramène une séance sous la durée voulue, dans cet ordre : repos raccourcis, échauffement et retour au calme
+// écourtés, une série de moins (en partant de la fin), cardio long raccourci, puis exercices secondaires retirés.
+// La mobilité nuque et dos, l'échauffement et l'exercice principal restent toujours.
+function fitDuration(items, target, notes) {
+  // Repères posés avant les retouches : échauffement (le premier exercice compris) et retour au calme.
+  let list = items.map((e, i) => ({ ...e, warm: i === 0 || WARMUPS.includes(firstInfo(e)), cool: i > 0 && isCooldown(e) }));
+  const clean = () => list.map(({ warm, cool, ...e }) => e);
+  const total = (l = list) => sessionSeconds(l.map((e, i) => (i === l.length - 1 ? { ...e, restAfter: 0 } : e)));
+  if (total() <= target) return clean();
+  const removed = [];
+  let fewer = 0;
+  const over = () => total() > target;
+  list = list.map((e) => {
+    const fingers = strainOf(e.info).includes('doigts');
+    const rest = !e.rest ? e.rest : fingers ? Math.max(Math.min(e.rest, 180), Math.round((e.rest * 0.75) / 15) * 15) : Math.max(30, Math.round((e.rest * 0.67) / 15) * 15);
+    return { ...e, rest, restAfter: Math.min(e.restAfter, 45) };
+  });
+  list = list.map((e, i) => {
+    if (over() && (e.warm || e.cool) && e.timed && e.sets === 1 && firstInfo(e) !== 'mobilite' && e.work > 180) return { ...e, work: Math.max(180, Math.round((e.work * 0.6) / 60) * 60) };
+    return e;
+  });
+  // Pyramides : on retire les paliers les plus faciles, en gardant les trois derniers.
+  list = list.map((e) => {
+    if (!over() || !e.setLabels || e.setLabels.length <= 3) return e;
+    const keep = e.setLabels.slice(-3);
+    fewer += e.setLabels.length - keep.length;
+    return { ...e, setLabels: keep, sets: keep.length };
+  });
+  for (let changed = true; changed && over();) {
+    changed = false;
+    for (let j = list.length - 1; j >= 0 && over(); j--) {
+      if (adjustable(list[j]) && list[j].sets >= 3) { list[j] = { ...list[j], sets: list[j].sets - 1 }; fewer++; changed = true; }
+    }
+  }
+  list = list.map((e, i) => {
+    if (!over() || e.warm || e.cool) return e;
+    if (e.timed && e.sets === 1 && e.work > 600) return { ...e, work: Math.max(600, Math.round((e.work - (total() - target)) / 60) * 60) };
+    if (e.inner && e.innerLabels && e.inner.rounds > 8) return { ...e, inner: { ...e.inner, rounds: 8 }, innerLabels: e.innerLabels.slice(0, 8) };
+    return e;
+  });
+  // Exercices retirés en partant de la fin : d'abord ceux dont le retrait ne fait pas tomber trop bas,
+  // puis les autres, et le deuxième exercice principal seulement en dernier recours.
+  const main = list.filter((e) => !e.warm && !e.cool).slice(0, 2);
+  const removable = (e) => !e.warm && !e.cool && !main.includes(e);
+  const drop = (e) => { removed.unshift(e.name); list = list.filter((x) => x !== e); };
+  [...list].reverse().filter(removable).forEach((e) => { if (over() && total(list.filter((x) => x !== e)) >= target - 300) drop(e); });
+  [...list].reverse().filter(removable).forEach((e) => { if (over()) drop(e); });
+  list = list.map((e) => (over() && main.includes(e) && adjustable(e) ? (fewer++, { ...e, sets: e.sets - 1 }) : e));
+  const second = list.find((e) => !e.warm && !e.cool && e !== list.find((x) => !x.warm && !x.cool));
+  if (over() && second) drop(second);
+  const done = ['repos raccourcis', fewer ? `${fewer} série${fewer > 1 ? 's' : ''} en moins` : '', removed.length ? `${removed.join(', ')} ${removed.length > 1 ? 'retirés' : 'retiré'}` : ''].filter(Boolean);
+  notes.unshift(`Séance ramenée à ${durationLabel(total())}${total() > target + 150 ? ' (au plus court)' : ''} : ${done.join(', ')}.`);
+  return clean();
+}
+
 const PAIN_FALLBACK = { name: 'Mobilité douce et étirements', info: 'etirements', work: 900, timed: true, note: 'Bouge sans douleur, amplitude confortable.' };
 
-export function buildSession(key, date, state, express = false) {
+export function buildSession(key, date, state, express = false, minutes = null) {
   const info = weekInfo(date, state.settings.startDate);
   const a = state.adapt;
   const variant = resolveKey(key, state, express);
@@ -375,9 +579,9 @@ export function buildSession(key, date, state, express = false) {
   const ctx = { f, info, p, g: a.gradeIdx, run: runs, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
-  let items = raw.filter((e) => e.kind !== 'note');
-
   const day = ymd(date);
+  let items = raw.filter((e) => e.kind !== 'note').map((e) => applySwap(e, state, day, t.home ? 'home' : 'gym', p));
+
   const pains = activePains(state, day);
   const zones = Object.keys(pains);
   if (zones.length) {
@@ -396,11 +600,16 @@ export function buildSession(key, date, state, express = false) {
     items = applyForm(items, form, { type, home: !!t.home, deload: info.phaseIndex === 3, notes });
   }
 
+  items = items.map((e) => ({ sets: 1, ...e, restAfter: e.restAfter ?? t.restAfter ?? 90 }));
+  const fullSeconds = sessionSeconds(items.map((e, i) => (i === items.length - 1 ? { ...e, restAfter: 0 } : e)));
+  const fit = minutes && !express && !t.reference && !t.mobility ? Number(minutes) : null;
+  if (fit) items = fitDuration(items, fit * 60, notes);
+
   // Carnet de charges : à la maison et en muscu, l'objectif suit tes dernières séances.
   const track = (t.home || type === 'muscu') && !t.reference && !t.mobility;
   const exercises = items.map((e, i) => {
-    const x = { sets: 1, ...e };
-    x.restAfter = i === items.length - 1 ? 0 : (e.restAfter ?? t.restAfter ?? 90);
+    const x = { ...e };
+    if (i === items.length - 1) x.restAfter = 0;
     x.lift = track ? liftPlan(x, state, day, { resetBefore: bench.date, hold: info.phaseIndex === 3 }) : null;
     if (x.load && x.lift?.target.kg != null) x.load = { ...x.load, kg: x.lift.target.kg };
     x.detail = describe(x);
@@ -411,7 +620,7 @@ export function buildSession(key, date, state, express = false) {
   const totalSeconds = sessionSeconds(exercises);
   return {
     key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, mobility: !!t.mobility, form, notes,
-    title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
+    title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, fullSeconds, minutes: fit, phase: info.phase, week: info.week, exercises,
   };
 }
 
@@ -530,7 +739,7 @@ export function recordBench(state, date, key, value) {
 
 // Parcours abdos, à lancer quand on veut : version salle ou maison selon l'abonnement.
 export function absSession(date, state) {
-  return { ...buildSession('abdos', date, state), index: 'abs', day: null, slot: null, time: '', date: ymd(date) };
+  return { ...buildSession('abdos', date, state, false, state.durations?.[`${ymd(date)}#abs`]), index: 'abs', day: null, slot: null, time: '', date: ymd(date) };
 }
 
 // Routine nuque et dos, quelques minutes les jours sans séance (ou en plus).

@@ -34,6 +34,8 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Tests de la prise de référence : en séance guidée, le ✓ de chaque test ouvre la saisie du résultat (`recordBench`). Pour les tests au temps, le temps tenu jusqu'au ✓ est proposé à confirmer ou corriger.
 - État de forme (`state.forms[date]`, `formLevel`) : petite forme = une série de moins sur chaque exercice ajustable, grande forme = une série bonus sur les deux premiers exercices comptés, jamais sur ce qui sollicite les doigts (`STRAIN`) ni en semaine de décharge. Sans effet sur la prise de référence (simple conseil).
 - Créneau (`state.slots['date#index']`, `setSlot`) : une séance de semaine passe du midi au soir ou l'inverse, pour ce jour-là seulement.
+- Remplacer (`SWAP_GROUPS`, `swapChoices`, `setSwap`, `state.swaps`) : variantes par mouvement, `where` = home, gym ou any. Clé `date|nom` pour un jour, `nom` pour toujours. Toute variante a une fiche, ses charges restent dans le matériel, et `STRAIN` est complété pour les nouvelles fiches.
+- Temps dispo (`state.durations['date#index']`, `fitDuration`) : repos raccourcis (entre efforts de doigts, 3 min gardées quand il y en avait plus), échauffement et retour au calme écourtés, séries en moins depuis la fin, cardio long raccourci, puis exercices secondaires retirés. L'échauffement, la mobilité nuque et dos et le premier exercice principal restent toujours.
 - Routine nuque et dos (`nuque`, `routineSession`, index `nuque`, drapeau `mobility`) : hors programme, sans carnet de charges, et `adapt` ignore ses notes.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 

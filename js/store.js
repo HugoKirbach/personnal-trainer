@@ -28,6 +28,8 @@ export function defaults() {
     climbs: [],
     forms: {},
     slots: {},
+    swaps: {},
+    durations: {},
     updatedAt: 0,
   };
 }

@@ -618,6 +618,110 @@ Object.assign(GUIDES, {
     ],
     errors: ['Tirer sur l\'épaule jusqu\'à la douleur.', 'Cambrer le dos.'],
   },
+  // Alternatives proposées par le bouton « Remplacer ».
+  'pompes-declinees': {
+    title: 'Pompes pieds surélevés', query: 'pompes pieds surélevés technique',
+    steps: [
+      'Pieds sur une chaise ou un banc, mains au sol un peu plus larges que les épaules.',
+      'Corps gainé en planche, descends la poitrine vers le sol en 2 secondes.',
+      'Pousse fort pour remonter, sans casser la ligne du corps.',
+    ],
+    errors: ['Hanches qui tombent.', 'Coudes à 90° du corps : garde-les à 45°.'],
+  },
+  'floor-press': {
+    title: 'Développé au sol un bras', query: 'floor press haltère un bras technique',
+    steps: [
+      'Allongé sur le dos, genoux pliés, haltère dans une main au-dessus de la poitrine.',
+      'Descends jusqu\'à ce que le coude touche légèrement le sol, coude à 45° du corps.',
+      'Pousse l\'haltère vers le plafond sans tourner le buste.',
+    ],
+    errors: ['Laisser tomber le coude au sol.', 'Pivoter le bassin pour aider.'],
+    tip: 'Le sol limite l\'amplitude : c\'est doux pour les épaules.',
+  },
+  'rowing-inverse': {
+    title: 'Rowing inversé', query: 'rowing inversé sous une table australian pull up',
+    steps: [
+      'Allongé sous une table bien stable (ou une barre basse), mains sur le bord, bras tendus.',
+      'Corps gainé, talons au sol, tire la poitrine vers le bord en serrant les omoplates.',
+      'Redescends lentement jusqu\'aux bras tendus.',
+    ],
+    errors: ['Utiliser une table qui peut basculer.', 'Laisser les hanches tomber.'],
+    tip: 'Plus tes pieds sont loin, plus c\'est dur.',
+  },
+  'chin-up': {
+    title: 'Tractions supination', query: 'traction supination chin up technique',
+    steps: [
+      'Prise paumes vers toi, mains écartées de la largeur des épaules.',
+      'Épaules engagées, tire jusqu\'à passer le menton au-dessus de la barre.',
+      'Redescends bras tendus, sans élan.',
+    ],
+    errors: ['Demi-amplitude.', 'Balancer les jambes.'],
+    tip: 'Plus de biceps, un peu moins de dos : une bonne variante pour soulager les coudes en prise pronation.',
+  },
+  'tirage-vertical': {
+    title: 'Tirage vertical à la poulie', query: 'tirage vertical poulie haute technique',
+    steps: [
+      'Assis, cuisses calées, prise un peu plus large que les épaules.',
+      'Poitrine sortie, tire la barre vers le haut de la poitrine, coudes vers les hanches.',
+      'Remonte lentement jusqu\'aux bras tendus.',
+    ],
+    errors: ['Tirer derrière la nuque.', 'Se pencher en arrière pour tricher.'],
+  },
+  ytw: {
+    title: 'Y-T-W au sol', query: 'exercice YTW épaules au sol',
+    steps: [
+      'Allongé sur le ventre, front sur une serviette, bras tendus devant toi, pouces vers le plafond.',
+      'Y : bras en diagonale, décolle-les du sol. T : bras sur les côtés. W : coudes pliés, serre les omoplates.',
+      'Tiens 2 secondes en haut de chaque répétition.',
+    ],
+    errors: ['Lever la tête : regard vers le sol.', 'Hausser les épaules vers les oreilles.'],
+  },
+  'extension-triceps': {
+    title: 'Extension triceps', query: 'extension triceps haltère un bras au dessus de la tête',
+    steps: [
+      'Haltère dans une main, bras tendu au-dessus de la tête (ou poignée de poulie en salle).',
+      'Plie le coude pour descendre l\'haltère derrière la tête, coude pointé vers le plafond.',
+      'Tends le bras sans bouger le coude.',
+    ],
+    errors: ['Écarter le coude.', 'Cambrer le dos : gaine-toi.'],
+  },
+  'pistol-assiste': {
+    title: 'Squat sur une jambe assisté', query: 'pistol squat assisté progression',
+    steps: [
+      'Debout sur une jambe, une main sur un appui stable (porte, chaise contre un mur).',
+      'Descends lentement en poussant les hanches en arrière, l\'autre jambe devant.',
+      'Remonte en t\'aidant le moins possible de la main.',
+    ],
+    errors: ['Genou qui rentre vers l\'intérieur.', 'Descendre plus bas que ce que tu contrôles.'],
+    tip: 'Commence en t\'asseyant sur une chaise, puis baisse la hauteur.',
+  },
+  'step-up': {
+    title: 'Step-up lesté', query: 'step up chaise exercice jambes',
+    steps: [
+      'Face à une chaise stable ou une marche haute, gilet sur le dos.',
+      'Pose un pied dessus et monte en poussant avec cette jambe, sans t\'aider du pied au sol.',
+      'Redescends lentement, puis enchaîne les répétitions de la même jambe.',
+    ],
+    errors: ['Pousser avec la jambe du bas.', 'Utiliser une chaise qui glisse.'],
+  },
+  'good-morning': {
+    title: 'Good morning avec le gilet', query: 'good morning poids du corps technique',
+    steps: [
+      'Debout, gilet sur le dos, mains croisées sur la poitrine, genoux légèrement fléchis.',
+      'Pousse les hanches en arrière en penchant le buste, dos droit, jusqu\'à sentir l\'arrière des cuisses.',
+      'Remonte en serrant les fessiers.',
+    ],
+    errors: ['Arrondir le dos.', 'Descendre trop bas au début.'],
+  },
+  'bird-dog': {
+    title: 'Bird dog', query: 'bird dog exercice gainage lombaires',
+    steps: [
+      'À quatre pattes, mains sous les épaules, genoux sous les hanches.',
+      'Tends un bras devant et la jambe opposée derrière, dos plat, tiens 2 secondes.',
+      'Reviens lentement et change de côté.',
+    ],
+    errors: ['Cambrer le bas du dos.', 'Pivoter le bassin.'],
+  },
 });
 
 export function videoUrl(guide) {

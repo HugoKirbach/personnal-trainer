@@ -14,6 +14,8 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 
 - **Aujourd'hui** : la séance du jour, exercices à cocher, chrono en un appui, conseil du jour, puis ressenti (Facile / OK / Dur), course terminée ou non, cotation max, zone douloureuse.
 - **État de forme** : avant la séance, trois questions (sommeil, énergie, courbatures). En petite forme, une série de moins par exercice ; en grande forme, une série bonus sur les deux premiers exercices (jamais sur ce qui charge les doigts, ni en semaine de décharge).
+- **Remplacer un exercice** : le bouton ⇄ propose deux ou trois variantes du même mouvement, avec le matériel du lieu et sans solliciter une zone douloureuse, pour aujourd'hui ou pour toujours.
+- **Temps dispo** : choisis 20, 30, 45 ou 60 min et la séance est raccourcie (repos, séries, exercices secondaires) en gardant l'échauffement, la mobilité nuque et dos et l'exercice principal.
 - **Midi ou soir** : une séance de semaine passe du midi au soir, ou l'inverse, pour ce jour-là (sur la séance ou dans Semaine).
 - **Séance guidée** : un seul chrono pour toute la séance, avec décompte, exercice en cours en grand, exercice suivant, temps restant et annonces vocales (coupables avec 🔊).
 - **Carnet de charges** : répétitions et charge de chaque série (dans la séance guidée ou avec 📒). L'appli propose l'objectif suivant : une répétition de plus, puis +1 kg quand le haut de la fourchette est atteint.

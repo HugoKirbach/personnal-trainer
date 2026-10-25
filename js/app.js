@@ -1,6 +1,6 @@
 import {
-  BENCH_TESTS, DAYS, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
-  buildSession, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, tipFor,
+  BENCH_TESTS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
+  buildSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSwap, swapChoices, tipFor,
   weekInfo, weekSessions, ymd,
 } from './program.js';
 import {
@@ -177,6 +177,25 @@ function openLiftSheet(id, i) {
       <p class="small muted">Vide une série que tu n'as pas faite.</p>
       <button class="primary">Enregistrer</button>
     </form>`);
+}
+
+// ---------- Remplacer un exercice ----------
+function openSwapSheet(id, i) {
+  const s = findSession(id);
+  const e = s.exercises[i];
+  const choices = swapChoices(e, s, state);
+  const hurt = Object.keys(activePains(state, s.date)).length > 0;
+  openSheet(`<div class="stack swap-sheet">
+      <h2>Remplacer : ${esc(e.name)}</h2>
+      <p class="small muted">Même mouvement, avec le matériel ${s.home ? 'de la maison' : 'de la salle'}${hurt ? ', sans solliciter ta zone douloureuse' : ''}. Séries et repos ne changent pas.</p>
+      ${e.swap.to ? `<div class="tip">⇄ Remplace « ${esc(e.swap.from)} » ${e.swap.once ? 'aujourd\'hui' : 'dans toutes tes séances'}.
+        <button class="link" data-swap-pick="${id}|${i}" data-to="${esc(e.swap.from)}">Revenir à ${esc(e.swap.from)}</button></div>` : ''}
+      ${choices.length ? `<ul class="swap-list">${choices.map((c) => `<li>
+        <div class="swap-head"><strong>${esc(c.name)}</strong><button class="icon-btn info-btn" data-info="${c.info}" aria-label="Tuto : ${esc(c.name)}">i</button></div>
+        <span class="small">${esc(c.detail)}</span>
+        <div class="row-btns"><button data-swap-pick="${id}|${i}" data-to="${esc(c.name)}">Aujourd'hui</button><button class="primary" data-swap-pick="${id}|${i}" data-to="${esc(c.name)}" data-always="1">Toujours</button></div>
+      </li>`).join('')}</ul>` : '<p class="small">Aucune autre variante possible ici.</p>'}
+    </div>`);
 }
 
 // Compteurs répétitions / charge de la séance guidée, sur les séries comptées.
@@ -473,6 +492,8 @@ function sessionCard(s) {
     <h2>${esc(s.title)}</h2>
     ${slotSwitch(s, id, log)}
     <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
+    ${log || s.reference || s.mobility || s.express ? '' : durationPick(s, id)}
+    ${s.slot === 'midi' && !s.minutes && s.totalSeconds > 80 * 60 ? '<p class="small note">🕐 Le midi, tu as 1h20 au plus : choisis un temps dispo plus court si besoin.</p>' : ''}
     ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : s.mobility ? '' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
     ${s.reference || s.mobility ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
@@ -481,12 +502,13 @@ function sessionCard(s) {
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
-          <span><strong>${esc(e.name)}</strong><br><span class="small">${esc(e.detail)}</span>
+          <span><strong>${esc(e.name)}</strong>${e.swap?.to ? `<br><span class="ex-swap">⇄ À la place de ${esc(e.swap.from)}${e.swap.once ? ', aujourd\'hui' : ''}</span>` : ''}<br><span class="small">${esc(e.detail)}</span>
           <span class="ex-meta">≈ ${fmtDuration(e.seconds)}${e.restAfter ? ` · puis ${fmtDuration(e.restAfter)} de repos avant l'exercice suivant` : ''}</span>
           ${e.lift ? liftLine(e, s.date) : ''}</span></label>
         <span class="ex-actions">
           ${e.info ? `<button class="icon-btn info-btn" data-info="${[].concat(e.info).join(',')}" aria-label="Tuto : ${esc(e.name)}">i</button>` : ''}
           ${e.lift ? `<button class="icon-btn" data-lift="${id}|${i}" aria-label="Noter mes séries">📒</button>` : ''}
+          ${e.swap && !log ? `<button class="icon-btn" data-swap="${id}|${i}" aria-label="Remplacer : ${esc(e.name)}">⇄</button>` : ''}
           ${e.timer ? `<button class="icon-btn" data-timer='${esc(JSON.stringify(e.timer))}' aria-label="Lancer le chrono">⏱</button>` : ''}
         </span>
       </li>`).join('')}
@@ -500,6 +522,17 @@ function sessionCard(s) {
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
+}
+
+// Temps disponible : la séance est raccourcie en gardant l'essentiel.
+function durationPick(s, id) {
+  const opts = DURATION_CHOICES.filter((m) => m * 60 < s.fullSeconds - 240);
+  if (!opts.length) return '';
+  return `<label class="duration-pick">⏳ Temps dispo
+      <select data-duration="${id}">
+        <option value="">Séance complète (${durationLabel(s.fullSeconds)})</option>
+        ${opts.map((m) => `<option value="${m}" ${s.minutes === m ? 'selected' : ''}>${m} min</option>`).join('')}
+      </select></label>`;
 }
 
 // Midi ou soir, pour les séances de semaine pas encore notées.
@@ -1043,6 +1076,16 @@ document.addEventListener('click', async (e) => {
   }
   if (d.lift) { const [id, i] = d.lift.split('|'); return openLiftSheet(id, Number(i)); }
   if (d.formEdit) { formEdit = true; return render(); }
+  if (d.swap) { const [id, i] = d.swap.split('|'); return openSwapSheet(id, Number(i)); }
+  if (d.swapPick) {
+    const [id, i] = d.swapPick.split('|');
+    const s = findSession(id);
+    const from = s.exercises[Number(i)].swap.from;
+    setSwap(state, s.date, from, d.to, !!d.always);
+    $('#sheet').hidden = true;
+    persist(); render();
+    return toast(d.to === from ? `Retour à ${esc(from)}.` : `${esc(d.to)} à la place de ${esc(from)}${d.always ? ', dans toutes tes séances' : ', aujourd\'hui'}.`, 3000);
+  }
   if (d.slot) {
     const [id, slot] = d.slot.split('|');
     setSlot(state, id, slot);
@@ -1135,6 +1178,13 @@ document.addEventListener('change', (e) => {
     state.checks[t.dataset.check] = [...list];
     t.closest('li').classList.toggle('done', t.checked);
     return save(state);
+  }
+  if (t.dataset.duration) {
+    state.durations = { ...(state.durations || {}) };
+    if (t.value) state.durations[t.dataset.duration] = Number(t.value); else delete state.durations[t.dataset.duration];
+    delete state.checks[t.dataset.duration];
+    persist(); render();
+    return toast(t.value ? `Séance ramenée à ${t.value} min environ : l'essentiel est gardé.` : 'Séance complète rétablie.', 2500);
   }
   if (t.dataset.slotsel) {
     setSlot(state, t.dataset.slotsel, t.value);

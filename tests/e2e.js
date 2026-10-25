@@ -91,6 +91,25 @@ try {
   await page.click('[data-heal="doigts"]');
   check((await page.textContent(`${PLAN} .exercises`)).includes('Suspensions actives'), 'exercices rétablis');
 
+  // Remplacer un exercice pour aujourd'hui, puis revenir à l'original.
+  await page.click(`${PLAN} [data-swap] >> nth=0`);
+  await page.waitForSelector('.swap-sheet');
+  check((await page.textContent('.swap-sheet h2')).includes('Tractions'), 'remplacement des tractions');
+  await shot('0k-remplacer');
+  await page.click('.swap-list li >> nth=0 >> button:has-text("Aujourd\'hui")');
+  check((await page.textContent(`${PLAN} .exercises`)).includes('À la place de Tractions'), 'exercice remplacé');
+  await page.click(`${PLAN} li:has(.ex-swap) [data-swap]`);
+  await page.click('.swap-sheet .tip button');
+  check(!(await page.textContent(`${PLAN} .exercises`)).includes('À la place de'), 'retour à l\'original');
+
+  // Temps dispo : séance ramenée à 30 min, puis complète.
+  await page.selectOption(`${PLAN} [data-duration]`, '30');
+  check((await page.textContent(`${PLAN} .total`)).includes('30 min'), 'séance ramenée à 30 min');
+  check((await page.textContent(PLAN)).includes('Séance ramenée'), 'explication du raccourci');
+  await shot('0l-duree');
+  await page.selectOption(`${PLAN} [data-duration]`, '');
+  check(!(await page.textContent(PLAN)).includes('Séance ramenée'), 'séance complète rétablie');
+
   // Parcours abdos : séance à lancer quand on veut, version maison.
   await page.click('.abs-wrap summary');
   check((await page.textContent('.abs-wrap h2')).includes('Parcours abdos à la maison'), 'parcours abdos maison');

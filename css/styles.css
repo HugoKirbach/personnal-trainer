@@ -342,3 +342,9 @@ section.card > .climbs:first-child { border-top: 0; padding-top: 0; margin-top: 
 .slot-seg { margin: 4px 0 8px; }
 .slot-seg button { font-size: .85rem; padding: 6px 8px; }
 .move select + select { margin-left: 4px; }
+.ex-swap { font-size: .8rem; color: var(--primary); font-weight: 600; }
+.swap-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.swap-list li { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; }
+.swap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.duration-pick { display: flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 600; margin: 0 0 8px; }
+.duration-pick select { flex: 1; }

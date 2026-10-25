@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -459,4 +459,72 @@ test('une séance de semaine passe du midi au soir pour ce jour-là seulement', 
   assert.equal(weekSessions(parseYmd('2026-11-02'), st)[0].slot, 'midi');
   setSlot(st, `${first.date}#0`, 'midi');
   assert.deepEqual(st.slots, {});
+});
+
+test('remplacer un exercice : alternatives du lieu, pour un jour ou pour toujours', async () => {
+  const { GUIDES } = await import('../js/guides.js');
+  SWAP_INFOS.forEach((id) => assert.ok(GUIDES[id], `fiche manquante : ${id}`));
+  const st = baseState();
+  st.settings.access = { escalade: false, muscu: false };
+  const day = parseYmd('2026-10-26');
+  const s = buildSession('haut', day, st); // haut du corps à la maison
+  const i = s.exercises.findIndex((e) => e.name === 'Rowing haltère un bras');
+  const row = s.exercises[i];
+  const choices = swapChoices(row, { ...s, date: '2026-10-26' }, st).map((c) => c.name);
+  assert.ok(choices.includes('Rowing inversé sous une table'));
+  assert.ok(!choices.includes('Rowing assis poulie, prise neutre'), 'pas de machine à la maison');
+  // Pour aujourd'hui seulement.
+  setSwap(st, '2026-10-26', row.name, 'Rowing inversé sous une table');
+  const today = buildSession('haut', day, st).exercises[i];
+  assert.equal(today.name, 'Rowing inversé sous une table');
+  assert.equal(today.sets, row.sets);
+  assert.ok(!today.load && today.swap.once);
+  assert.equal(buildSession('haut', parseYmd('2026-11-02'), st).exercises[i].name, 'Rowing haltère un bras');
+  // Pour toujours, puis retour à l'original.
+  setSwap(st, '2026-10-26', 'Élévations latérales un bras', 'Y-T-W au sol', true);
+  const later = buildSession('haut', parseYmd('2026-11-09'), st);
+  assert.ok(later.exercises.some((e) => e.name === 'Y-T-W au sol' && !e.swap.once));
+  setSwap(st, '2026-11-09', 'Élévations latérales un bras', 'Élévations latérales un bras');
+  assert.ok(buildSession('haut', parseYmd('2026-11-09'), st).exercises.some((e) => e.name === 'Élévations latérales un bras'));
+  // Les charges restent dans le matériel, les tractions gardent leur prescription.
+  for (const e of later.exercises) if (e.load?.tool === 'haltère') assert.ok(e.load.kg <= 10 && e.load.kg >= 2);
+  const bloc = buildSession('bloc', day, st);
+  const pull = bloc.exercises.find((e) => e.info === 'tractions');
+  setSwap(st, '2026-10-26', pull.name, 'Tractions supination');
+  const chin = buildSession('bloc', day, st).exercises.find((e) => e.name === 'Tractions supination');
+  assert.equal(chin.reps, pull.reps);
+  // Une zone douloureuse écarte les alternatives qui la sollicitent.
+  addPains(st, ['coude'], '2026-10-26');
+  const safe = swapChoices({ ...row, swap: { from: row.name, group: row.swap.group } }, { ...s, date: '2026-10-26' }, st).map((c) => c.name);
+  assert.ok(!safe.includes('Rowing inversé sous une table'));
+});
+
+test('séance à la durée choisie : plus courte, mobilité et exercice principal gardés', () => {
+  const st = baseState();
+  const day = parseYmd('2026-11-04');
+  for (const key of ['haut', 'bas', 'bloc', 'blocMaison', 'hautMaison', 'basMaison', 'voieMaison', 'fractionneVelo']) {
+    const full = buildSession(key, day, st);
+    for (const min of DURATION_CHOICES) {
+      if (min * 60 >= full.fullSeconds - 240) continue;
+      const s = buildSession(key, day, st, false, min);
+      assert.equal(s.fullSeconds, full.fullSeconds);
+      assert.ok(s.totalSeconds < full.totalSeconds, `${key} ${min}`);
+      if (min >= 30) assert.ok(s.totalSeconds <= min * 60 + 150, `${key} ${min} : ${s.duration}`);
+      assert.ok(s.notes[0].startsWith('Séance ramenée'), key);
+      assert.equal(s.exercises[0].name, full.exercises[0].name, `${key} : échauffement gardé`);
+      const firstMain = full.exercises.find((e, i) => i > 0 && !/echauffement|mobilite/.test([].concat(e.info)[0]));
+      assert.ok(s.exercises.some((e) => e.name === firstMain.name), `${key} ${min} : ${firstMain.name} gardé`);
+      if (full.type === 'escalade') assert.ok(s.exercises.some((e) => e.info === 'mobilite'), `${key} : mobilité nuque et dos gardée`);
+      s.exercises.forEach((e) => assert.ok(!/undefined|NaN/.test(e.detail), e.detail));
+      assert.equal(s.exercises.at(-1).restAfter, 0);
+    }
+  }
+  // Prise de référence, routine et express ne sont pas raccourcies.
+  assert.equal(buildSession('reference', day, st, false, 20).minutes, null);
+  assert.equal(buildSession('bloc', day, st, true, 20).minutes, null);
+  // La durée choisie suit la séance du jour dans la semaine.
+  st.durations = { '2026-11-04#1': 30 };
+  const week = weekSessions(parseYmd('2026-11-02'), st);
+  assert.equal(week[1].minutes, 30);
+  assert.equal(week[0].minutes, null);
 });
