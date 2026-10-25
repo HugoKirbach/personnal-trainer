@@ -1,7 +1,8 @@
-// État de l'appli, sauvegardé dans le navigateur du téléphone.
+// État de l'appli, sauvegardé dans le navigateur du téléphone (et en ligne si un compte est connecté).
 import { defaultStart } from './program.js';
 
 const KEY = 'personnal-trainer:v1';
+const listeners = new Set();
 
 export function defaults() {
   return {
@@ -25,33 +26,45 @@ export function defaults() {
     lifts: {},
     pains: [],
     climbs: [],
+    updatedAt: 0,
+  };
+}
+
+// Complète un état ancien, importé ou venant d'un autre appareil avec les valeurs par défaut.
+export function normalize(s) {
+  const base = defaults();
+  return {
+    ...base,
+    ...s,
+    settings: {
+      ...base.settings,
+      ...s.settings,
+      times: { ...base.settings.times, ...s.settings?.times },
+      access: { ...base.settings.access, ...s.settings?.access },
+    },
+    adapt: { ...base.adapt, ...s.adapt },
   };
 }
 
 export function load() {
-  const base = defaults();
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return base;
-    const s = JSON.parse(raw);
-    return {
-      ...base,
-      ...s,
-      settings: {
-        ...base.settings,
-        ...s.settings,
-        times: { ...base.settings.times, ...s.settings?.times },
-        access: { ...base.settings.access, ...s.settings?.access },
-      },
-      adapt: { ...base.adapt, ...s.adapt },
-    };
+    return raw ? normalize(JSON.parse(raw)) : defaults();
   } catch {
-    return base;
+    return defaults();
   }
 }
 
-export function save(state) {
+// touch : false quand l'état vient du compte en ligne (ce n'est pas une modification locale).
+// updatedAt ne recule jamais, même si l'horloge d'un autre téléphone était en avance.
+export function save(state, { touch = true } = {}) {
+  if (touch) state.updatedAt = Math.max(Date.now(), (state.updatedAt || 0) + 1);
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch { /* stockage indisponible */ }
+  listeners.forEach((fn) => fn(state));
+}
+
+export function onSave(fn) {
+  listeners.add(fn);
 }

@@ -1,8 +1,10 @@
 // Service worker : fonctionnement hors ligne et rappel du jour.
-const VERSION = 'v5';
+const VERSION = 'v6';
+// Module de compte (Firebase, versionné dans l'URL) : gardé en cache pour retrouver sa session hors ligne.
+const SDK_CACHE = 'pt-sdk-10.12.2';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/program.js', 'js/store.js', 'js/timer.js', 'js/charts.js', 'js/calendar.js', 'js/guided.js', 'js/guides.js', 'js/lifts.js', 'js/voice.js',
+  'js/app.js', 'js/program.js', 'js/store.js', 'js/timer.js', 'js/charts.js', 'js/calendar.js', 'js/guided.js', 'js/guides.js', 'js/lifts.js', 'js/voice.js', 'js/cloud.js', 'js/merge.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/badge.png',
 ];
 
@@ -18,7 +20,19 @@ self.addEventListener('activate', (e) => {
 
 // Réseau d'abord (pour recevoir les mises à jour), cache si hors ligne.
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) {
+    e.respondWith(caches.open(SDK_CACHE).then(async (cache) => {
+      const hit = await cache.match(e.request);
+      if (hit) return hit;
+      const res = await fetch(e.request);
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
+    }));
+    return;
+  }
+  if (url.origin !== location.origin) return;
   e.respondWith(fetch(e.request)
     .then((res) => {
       const copy = res.clone();

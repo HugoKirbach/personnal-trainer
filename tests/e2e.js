@@ -1,6 +1,8 @@
 // Test de bout en bout dans Chromium : parcours principal de l'appli sur un écran de téléphone.
+import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { serve } from './serve.js';
+import { fakeCloud } from './fakecloud.js';
 
 const PORT = 4173;
 const server = await serve(PORT);
@@ -206,6 +208,65 @@ try {
   await page.reload();
   await page.click('nav [data-go="stats"]');
   check((await page.$$('.table tbody tr')).length >= 4, 'historique conservé');
+
+  // Compte : sauvegarde en ligne puis récupération sur un autre téléphone (faux Firebase).
+  const cloud = fakeCloud();
+  const phone = async (seed) => {
+    const c = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+    await c.route(/^https:\/\/[^/]*(googleapis\.com|firebaseapp\.com|google\.com)\//, (r) => r.abort());
+    await c.route('https://www.gstatic.com/firebasejs/**', (r) => r.fulfill({
+      contentType: 'text/javascript', body: readFileSync(new URL(`./fbmock/${r.request().url().split('/').pop()}`, import.meta.url), 'utf8'),
+    }));
+    await c.exposeFunction('__fs', (op, args, uid) => cloud.fs(op, args, uid));
+    await c.exposeFunction('__auth', (op, args) => cloud.auth(op, args));
+    if (seed) await c.addInitScript((v) => { if (!localStorage.getItem('personnal-trainer:v1')) localStorage.setItem('personnal-trainer:v1', v); }, seed);
+    const p = await c.newPage();
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(`http://localhost:${PORT}/`);
+    await p.waitForSelector('#main h1');
+    return p;
+  };
+  const synced = (p) => p.waitForFunction(() => document.querySelector('#cloud-status')?.textContent.includes('Tout est sauvegardé'));
+  const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('personnal-trainer:v1')));
+
+  const phoneA = await phone(await page.evaluate(() => localStorage.getItem('personnal-trainer:v1')));
+  await phoneA.click('nav [data-go="settings"]');
+  await phoneA.click('[data-action="cloud-google"]');
+  await synced(phoneA);
+  check(cloud.db.has('users/u-google/apps/personnal-trainer'), 'données envoyées en ligne');
+  check([...cloud.db.keys()].some((k) => k.startsWith('users/u-google/apps/personnal-trainer/backups/')), 'sauvegarde du jour');
+  check(await phoneA.isVisible('#cloud-badge'), 'indicateur de synchro');
+  if (shots) await phoneA.screenshot({ path: `${shots}/6-compte.png` });
+
+  const phoneB = await phone(null);
+  await phoneB.click('nav [data-go="settings"]');
+  await phoneB.click('[data-action="cloud-google"]');
+  await synced(phoneB);
+  await phoneB.click('nav [data-go="stats"]');
+  check((await phoneB.textContent('#main')).includes('Escalade bloc'), 'historique retrouvé sur le nouveau téléphone');
+
+  // Un bloc noté sur le téléphone B arrive sur le téléphone A.
+  await phoneB.click('nav [data-go="today"]');
+  await phoneB.click('.climbs summary');
+  await phoneB.selectOption('[data-form="climb"] select[name=grade]', '7a');
+  await phoneB.click('[data-form="climb"] button');
+  await phoneB.click('nav [data-go="settings"]');
+  await phoneB.click('[data-action="cloud-sync"]');
+  await synced(phoneB);
+  await phoneA.click('[data-action="cloud-sync"]');
+  await synced(phoneA);
+  check((await stored(phoneA)).climbs.some((c) => c.grade === '7a'), 'synchro entre les deux téléphones');
+  check((await stored(phoneA)).logs.length >= 1, 'rien de perdu à la fusion');
+
+  await phoneA.click('[data-action="cloud-backups"]');
+  await phoneA.waitForSelector('[data-restore]');
+  if (shots) await phoneA.locator('#cloud-card').screenshot({ path: `${shots}/6b-sauvegardes.png` });
+
+  // Déconnexion : les données restent sur le téléphone.
+  await phoneA.click('[data-action="cloud-out"]');
+  await phoneA.click('[data-action="cloud-out"]');
+  await phoneA.waitForSelector('[data-action="cloud-google"]');
+  check((await stored(phoneA)).logs.length >= 1, 'données gardées après déconnexion');
 
   check(!errors.length, `erreurs console : ${errors.join(' | ')}`);
   console.log('e2e OK');

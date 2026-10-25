@@ -13,7 +13,9 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - `js/guides.js` : fiches tuto des exercices (consignes, erreurs, recherche vidéo YouTube). Chaque `info` d'exercice doit pointer vers une fiche existante.
 - `js/app.js` : rendu des vues et événements (délégation par `data-*`).
 - `js/charts.js` : graphiques SVG faits main. `js/calendar.js` : liens Google Agenda et export .ics.
-- `js/store.js` : état dans `localStorage` (clé `personnal-trainer:v1`).
+- `js/store.js` : état dans `localStorage` (clé `personnal-trainer:v1`), `updatedAt` qui ne recule jamais.
+- `js/cloud.js` : compte facultatif (Firebase Auth + Firestore, projet `beatforge-ccd25` partagé avec BeatForge, appli nommée `personnal-trainer` pour une session séparée). Document `users/{uid}/apps/personnal-trainer`, une sauvegarde par jour dans `backups/` (7 gardées). SDK chargé à la demande depuis gstatic et mis en cache par `sw.js`. Les règles Firestore de BeatForge (`users/{uid}/**` réservé au propriétaire) couvrent ce chemin.
+- `js/merge.js` : fusion à trois voies de deux états (synchro entre téléphones).
 - `sw.js` : cache hors ligne et rappel du jour via Periodic Background Sync. Incrémenter `VERSION` quand la liste des fichiers change.
 
 ## Règles
@@ -34,7 +36,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 ## Commandes
 
 - `npm test` : tests unitaires (node --test).
-- `npm run test:e2e` : parcours complet dans Chromium (Playwright).
+- `npm run test:e2e` : parcours complet dans Chromium (Playwright), compte inclus avec un faux Firebase (`tests/fbmock`, `tests/fakecloud.js`) : jamais d'appel aux vrais serveurs.
 - `npm start` : serveur local sur http://localhost:8080.
 
 Publication : GitHub Actions déploie `main` sur https://hugokirbach.github.io/personnal-trainer/ après les tests.

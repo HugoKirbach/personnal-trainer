@@ -27,7 +27,9 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Parcours abdos** : une séance de 25 à 35 min, en salle ou à la maison, à lancer quand tu veux (grand droit, obliques, gainage profond et lombaires).
 - **Programme adaptatif** : cycles de 4 semaines, volume et niveau cible ajustés selon le ressenti.
 
-Les données restent sur le téléphone (export et import JSON dans Réglages).
+- **Compte (facultatif)** : Réglages › Compte, « Continuer avec Google » ou e-mail, avec le même compte Firebase que BeatForge. Chaque changement est sauvegardé en ligne quelques secondes après, retrouvé sur un autre téléphone, et fusionné si deux téléphones ont été modifiés. Une sauvegarde par jour est gardée 7 jours (bouton « Sauvegardes en ligne » pour revenir en arrière).
+
+Sans compte, les données restent sur le téléphone (export et import JSON dans Réglages).
 
 ## Développement
 

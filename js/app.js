@@ -2,7 +2,13 @@ import {
   BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary, buildSession, fmtDuration,
   healPain, mondayOf, parseYmd, recordBench, referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
 } from './program.js';
-import { load, save, defaults } from './store.js';
+import {
+  load, save, defaults, normalize, onSave,
+} from './store.js';
+import {
+  cloudStatus, initCloud, listBackups, onCloud, resetPassword, restoreBackup, signInEmail, signInGoogle, signOutCloud, signUpEmail,
+  startCloud, stateSaved, sync,
+} from './cloud.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
 import {
   CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, bindTooltips,
@@ -308,6 +314,7 @@ function render() {
     today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings, guided: renderGuided,
   }[view]();
   if (view === 'timer') paintTimer();
+  if (view === 'settings') cloudDrawn = cloudShape(cloudStatus());
   liftStep = null;
   if (view === 'guided') paintGuided();
 }
@@ -814,16 +821,112 @@ function renderSettings() {
       ${sched.map((x) => { const b = buildSession(x.key, new Date(), state); return `<a class="btn" target="_blank" rel="noopener" href="${googleLink(x, state)}">+ ${esc(b.title)} · ${DAYS[x.day].toLowerCase()} ${s.times[x.day >= 5 ? 'weekend' : x.slot]}</a>`; }).join('')}
       <button data-action="ics">Télécharger les 4 prochaines semaines (.ics)</button>
     </section>
+    <section class="card stack" id="cloud-card">${cloudCard()}</section>
     <section class="card stack">
-      <h2>Sauvegarde</h2>
-      <p class="small muted">Tes données restent sur ce téléphone. Exporte-les de temps en temps.</p>
+      <h2>Sauvegarde dans un fichier</h2>
+      <p class="small muted">Une copie de secours de tes données, à garder où tu veux.</p>
       <div class="row-btns">
         <button data-action="export">Exporter</button>
         <label class="btn">Importer<input type="file" accept="application/json" data-action="import" hidden></label>
       </div>
       <button class="danger" data-action="reset">Tout réinitialiser</button>
+      ${cloudStatus().user ? '<p class="small muted">Avec un compte connecté, la réinitialisation est aussi envoyée en ligne. Les sauvegardes des 7 derniers jours restent disponibles.</p>' : ''}
     </section>
     <p class="hint center">Installe l'appli : menu ⋮ de Chrome, puis « Ajouter à l'écran d'accueil ».</p>`;
+}
+
+// ---------- Compte et sauvegarde en ligne ----------
+const CLOUD_ICON = { synced: '✓', pending: '⏳', syncing: '⏳', loading: '…', offline: '📴', error: '⚠️' };
+
+function cloudLine(c) {
+  if (c.state === 'error') return `⚠️ ${esc(c.error)}`;
+  if (c.state === 'offline') return '📴 Hors ligne : envoi à la prochaine connexion.';
+  if (c.state === 'loading') return 'Connexion…';
+  if (c.state === 'syncing') return 'Synchronisation…';
+  if (c.state === 'pending' || c.pending) return '⏳ Modifications en attente d\'envoi.';
+  if (c.state === 'synced') return `✓ Tout est sauvegardé${c.lastSync ? ` (${new Date(c.lastSync).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}.`;
+  return '';
+}
+
+const cloudShape = (c) => `${c.user?.uid || ''}|${c.known?.email || ''}|${c.state === 'off'}`;
+
+function cloudCard() {
+  const c = cloudStatus();
+  const intro = '<h2>Compte et sauvegarde en ligne</h2>';
+  if (c.user) {
+    return `${intro}
+      <p>Connecté : <strong>${esc(c.user.email || c.user.name)}</strong></p>
+      <p class="small" id="cloud-status">${cloudLine(c)}</p>
+      <p class="small muted">Chaque changement est envoyé quelques secondes après. Une copie par jour est gardée 7 jours.</p>
+      <div class="row-btns">
+        <button data-action="cloud-sync">Synchroniser maintenant</button>
+        <button data-action="cloud-backups">Sauvegardes en ligne</button>
+      </div>
+      <div id="cloud-backups"></div>
+      <button class="danger" data-action="cloud-out">Se déconnecter</button>`;
+  }
+  if (c.known && c.state !== 'off') {
+    return `${intro}
+      <p>Compte : <strong>${esc(c.known.email || c.known.name)}</strong></p>
+      <p class="small" id="cloud-status">${cloudLine(c)}</p>
+      <button data-action="cloud-retry">Réessayer</button>`;
+  }
+  return `${intro}
+    <p class="small muted">Connecte-toi avec le même compte que BeatForge : séances, charges, références, carnets et réglages sont sauvegardés en ligne quelques secondes après chaque changement, et retrouvés sur un autre téléphone. Sans compte, tout reste sur ce téléphone.</p>
+    <button class="primary" data-action="cloud-google">Continuer avec Google</button>
+    <details class="cloud-email">
+      <summary class="small">Avec un e-mail et un mot de passe</summary>
+      <form data-form="cloud-email" class="stack">
+        <label>E-mail <input type="email" name="email" autocomplete="email" required></label>
+        <label>Mot de passe <input type="password" name="password" autocomplete="current-password" minlength="6" required></label>
+        <div class="row-btns">
+          <button class="primary" name="mode" value="in">Se connecter</button>
+          <button name="mode" value="up">Créer un compte</button>
+        </div>
+        <button type="button" class="link small" data-action="cloud-reset">Mot de passe oublié</button>
+      </form>
+    </details>
+    <p class="small" id="cloud-status">${cloudLine(c)}</p>`;
+}
+
+let cloudDrawn = '';
+function paintCloud() {
+  const c = cloudStatus();
+  const badge = $('#cloud-badge');
+  badge.hidden = !(c.user || c.known);
+  badge.textContent = `☁️ ${CLOUD_ICON[c.pending && c.state === 'synced' ? 'pending' : c.state] || ''}`;
+  badge.title = cloudLine(c).replace(/<[^>]+>/g, '');
+  const card = $('#cloud-card');
+  if (!card) return;
+  if (cloudShape(c) !== cloudDrawn) { cloudDrawn = cloudShape(c); card.innerHTML = cloudCard(); return; }
+  const line = $('#cloud-status');
+  if (line) line.innerHTML = cloudLine(c);
+}
+
+async function cloudAction(fn, okMsg) {
+  try {
+    await fn();
+    if (okMsg) toast(okMsg);
+  } catch (err) {
+    toast(esc(err.message || 'Erreur.'), 5000);
+    $('#cloud-card')?.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+    const g = $('[data-action="cloud-google"]');
+    if (g) g.textContent = 'Continuer avec Google';
+  }
+  paintCloud();
+}
+
+async function showBackups(box) {
+  box.innerHTML = '<p class="small muted">Chargement…</p>';
+  try {
+    const list = await listBackups();
+    box.innerHTML = list.length ? `<ul class="backup-list">${list.map((b) => `<li>
+        <span>${parseYmd(b.id).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })}<br><span class="muted small">${b.logs} séance${b.logs > 1 ? 's' : ''} notée${b.logs > 1 ? 's' : ''}</span></span>
+        <button data-restore="${b.id}">Restaurer</button></li>`).join('')}</ul>
+      <p class="small muted">Restaurer remplace tes données actuelles, ici et en ligne.</p>` : '<p class="small muted">Aucune sauvegarde pour l\'instant.</p>';
+  } catch (err) {
+    box.innerHTML = `<p class="small">⚠️ ${esc(err.message)}</p>`;
+  }
 }
 
 // ---------- Événements ----------
@@ -916,6 +1019,33 @@ document.addEventListener('click', async (e) => {
     return reg.showNotification('Personal Trainer', { body: `Test réussi ! ${tipFor('escalade')}`, icon: 'icons/icon-192.png', badge: 'icons/badge.png', vibrate: [200, 100, 200] });
   }
   if (d.action === 'ics') return downloadIcs(state);
+  if (d.action === 'cloud-google') { t.disabled = true; t.textContent = 'Connexion…'; return cloudAction(signInGoogle); }
+  if (d.action === 'cloud-reset') {
+    const email = t.closest('form').querySelector('[name=email]').value;
+    if (!email) return toast('Entre ton e-mail, puis appuie sur « Mot de passe oublié ».');
+    return cloudAction(() => resetPassword(email), 'E-mail de réinitialisation envoyé.');
+  }
+  if (d.action === 'cloud-sync') return cloudAction(() => sync());
+  if (d.action === 'cloud-retry') return cloudAction(startCloud);
+  if (d.action === 'cloud-backups') return showBackups($('#cloud-backups'));
+  if (d.action === 'cloud-out') {
+    if (!t.dataset.confirm) {
+      t.dataset.confirm = '1';
+      t.textContent = 'Appuie encore : tes données restent sur ce téléphone';
+      setTimeout(() => { delete t.dataset.confirm; t.textContent = 'Se déconnecter'; }, 4000);
+      return;
+    }
+    return cloudAction(signOutCloud, 'Déconnecté. Tes données restent sur ce téléphone.');
+  }
+  if (d.restore) {
+    if (!t.dataset.confirm) {
+      t.dataset.confirm = '1';
+      t.textContent = 'Confirmer ?';
+      setTimeout(() => { delete t.dataset.confirm; t.textContent = 'Restaurer'; }, 4000);
+      return;
+    }
+    return cloudAction(() => restoreBackup(d.restore), 'Sauvegarde restaurée.');
+  }
   if (d.action === 'export') {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `personnal-trainer-${ymd(new Date())}.json` });
@@ -923,7 +1053,7 @@ document.addEventListener('click', async (e) => {
     return;
   }
   if (d.action === 'reset') {
-    if (t.dataset.confirm) { state = defaults(); persist(); go('today'); return toast('Données réinitialisées.'); }
+    if (t.dataset.confirm) { state = { ...defaults(), updatedAt: state.updatedAt }; persist(); go('today'); return toast('Données réinitialisées.'); }
     t.dataset.confirm = '1';
     t.textContent = 'Appuie encore pour confirmer';
     setTimeout(() => { delete t.dataset.confirm; t.textContent = 'Tout réinitialiser'; }, 4000);
@@ -949,7 +1079,7 @@ document.addEventListener('change', (e) => {
       try {
         const data = JSON.parse(txt);
         if (!data.settings || !Array.isArray(data.logs)) throw new Error();
-        state = { ...defaults(), ...data };
+        state = normalize({ ...data, updatedAt: Math.max(data.updatedAt || 0, state.updatedAt || 0) });
         persist(); render(); toast('Données importées.');
       } catch { toast('Fichier invalide.'); }
     });
@@ -979,6 +1109,11 @@ document.addEventListener('submit', (e) => {
     if (!done.length) return toast('Séries effacées.');
     const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done });
     return toast(`Séries enregistrées 📒<br>Prochaine fois : ${targetText(next)}${next.reason ? ` (${esc(next.reason)})` : ''}`, 5000);
+  }
+  if (kind === 'cloud-email') {
+    const up = e.submitter?.value === 'up';
+    f.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    return cloudAction(() => (up ? signUpEmail : signInEmail)(fd.get('email'), fd.get('password')), up ? 'Compte créé.' : null);
   }
   if (kind === 'bench-one') {
     const value = Number(fd.get('value'));
@@ -1048,3 +1183,16 @@ if ('serviceWorker' in navigator) {
 }
 render();
 writePlan();
+onSave(stateSaved);
+onCloud(paintCloud);
+initCloud({
+  getState: () => state,
+  // Données venues du compte (autre téléphone, fusion ou restauration).
+  setState: (s) => {
+    state = normalize(s);
+    save(state, { touch: false });
+    writePlan();
+    render();
+  },
+});
+paintCloud();
