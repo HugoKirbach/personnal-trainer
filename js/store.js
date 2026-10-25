@@ -11,6 +11,7 @@ export function defaults() {
       times: { midi: '12:15', soir: '18:00', weekend: '10:00' },
       sound: true,
       vibrate: true,
+      voice: true,
       notifications: false,
       reminderMinutes: 30,
       access: { escalade: false, muscu: false },
@@ -21,6 +22,9 @@ export function defaults() {
     checks: {},
     express: {},
     benchmarks: [],
+    lifts: {},
+    pains: [],
+    climbs: [],
   };
 }
 

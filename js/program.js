@@ -1,4 +1,5 @@
 // Génération du programme hebdomadaire et règles d'adaptation.
+import { fmtKg, liftPlan } from './lifts.js';
 
 export const GRADES = ['5c', '6a', '6a+', '6b', '6b+', '6c', '6c+', '7a', '7a+', '7b'];
 export const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -82,6 +83,7 @@ export const TIPS = {
 //   info       fiche(s) tuto de guides.js
 //   countUp    test maximal : la séance guidée affiche le temps écoulé
 //   test       clé du résultat à noter (prise de référence)
+//   load       charge suivie dans le carnet : { kg, step, min, max, tool, fromBench? }
 //   note       consignes affichées après la prescription
 const MOBILITY = {
   name: 'Échauffement nuque, épaules, dos', info: 'mobilite', label: 'Mobilité',
@@ -100,6 +102,13 @@ const SIDE_PLANK_CIRCUIT = (sets) => ({
     { name: 'Dead bug', label: '10 dead bugs lents', work: 45, info: 'dead-bug' },
   ],
 });
+
+// Charges suivies dans le carnet. À la maison : un haltère réglable de 2 à 10 kg (pas de 1 kg),
+// le gilet de 4 à 8 kg, la pince de 5 à 60 kg. En salle, la charge est libre.
+const DB = (kg) => ({ kg, step: 1, min: 2, max: 10, tool: 'haltère' });
+const VEST = (kg) => ({ kg, step: 1, min: 4, max: 8, tool: 'gilet', fromBench: true });
+const GRIP = (kg) => ({ kg, step: 5, min: 5, max: 60, tool: 'pince', fromBench: true });
+const GYM = (step = 2) => ({ kg: null, step, min: 0, max: 300, tool: 'charge' });
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const grade = (i) => GRADES[clamp(i, 0, GRADES.length - 1)];
@@ -195,7 +204,7 @@ function describe(e) {
   else if (e.countUp) main = 'Effort maximal, une seule fois';
   else if (e.setLabels) main = `${e.sets} ${unit} : ${e.setLabels.join(', ')}`;
   else if (e.inner) main = `${e.sets > 1 ? `${e.sets} séries de ` : ''}${e.inner.rounds} × (${fmtDuration(e.inner.work)} d'effort${e.inner.rest ? ` / ${fmtDuration(e.inner.rest)} de repos` : ''})`;
-  else if (e.reps) main = `${e.sets} × ${e.reps}`;
+  else if (e.reps) main = `${e.sets} × ${e.reps}${e.load?.kg != null ? `, ${e.load.tool} à ${fmtKg(e.load.kg)}` : ''}`;
   else if (e.sets > 1) main = `${e.sets} × ${fmtDuration(e.work)}`;
   else main = fmtDuration(e.work);
   const rest = e.sets > 1 && e.rest ? `, repos ${fmtDuration(e.rest)} entre les ${unit}` : '';
@@ -214,6 +223,71 @@ function timerFor(e) {
   return null;
 }
 
+// ---------- Douleurs ----------
+export const ZONES = { doigts: 'Doigts', poignet: 'Poignet', coude: 'Coude', epaule: 'Épaule', nuque: 'Nuque', dos: 'Dos', genou: 'Genou' };
+export const PAIN_DAYS = 7;
+// Zones sollicitées par chaque fiche d'exercice. Mobilité, étirements, grimpe facile,
+// gainage et exercices de prévention (face pull, rotations externes) restent toujours.
+const STRAIN = {
+  poutre: ['doigts', 'coude'], projet: ['doigts', 'coude', 'epaule'], 'bloc-niveau': ['doigts', 'epaule'],
+  'pyramide-voie': ['doigts'], '4x4': ['doigts', 'coude'],
+  suspensions: ['doigts', 'coude', 'epaule'], pince: ['doigts', 'poignet', 'coude'],
+  tractions: ['coude', 'epaule'], 'tractions-negatives': ['coude', 'epaule'], 'scap-pulls': ['epaule'], 'releves-genoux': ['epaule', 'dos'],
+  pompes: ['poignet', 'epaule'], 'pompes-diamant': ['poignet', 'coude', 'epaule'], 'pompes-piquees': ['poignet', 'epaule', 'nuque'],
+  'dips-machine': ['epaule', 'coude'], 'developpe-couche-halteres': ['epaule'], 'developpe-epaules': ['epaule', 'nuque'],
+  'elevations-laterales': ['epaule'], oiseau: ['epaule'], 'rowing-haltere': ['dos', 'coude'], 'rowing-poulie': ['dos', 'coude'],
+  curl: ['coude', 'poignet'], 'extensions-poignets': ['poignet', 'coude'],
+  'goblet-squat': ['genou', 'dos'], presse: ['genou'], 'souleve-roumain': ['dos'], 'souleve-roumain-unilateral': ['dos'],
+  'fentes-marchees': ['genou'], 'fentes-bulgares': ['genou'], hollow: ['dos', 'nuque'], superman: ['dos', 'nuque'],
+  'course-endurance': ['genou'], 'fractionne-30-30': ['genou'], 'test-cooper': ['genou'],
+};
+export const strainOf = (info) => [...new Set([].concat(info || []).flatMap((i) => STRAIN[i] || []))];
+
+const addDays = (d, n) => ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
+
+// Zones douloureuses actives à une date : { zone: date de fin }.
+export function activePains(state, dateYmd) {
+  const out = {};
+  (state.pains || []).forEach((p) => {
+    if (p.from <= dateYmd && dateYmd <= p.until && (!out[p.zone] || p.until > out[p.zone])) out[p.zone] = p.until;
+  });
+  return out;
+}
+
+// Signale des douleurs à partir d'une date : les exercices concernés sont retirés pendant 7 jours.
+export function addPains(state, zones, fromYmd) {
+  const until = addDays(parseYmd(fromYmd), PAIN_DAYS - 1);
+  state.pains = [...(state.pains || []).filter((p) => !zones.includes(p.zone) || p.until < fromYmd), ...zones.map((zone) => ({ zone, from: fromYmd, until }))];
+}
+
+// « Ça va mieux » : la zone redevient disponible dès la date donnée.
+export function healPain(state, zone, fromYmd) {
+  const before = addDays(parseYmd(fromYmd), -1);
+  state.pains = (state.pains || [])
+    .map((p) => (p.zone === zone && p.until >= fromYmd ? { ...p, until: before } : p))
+    .filter((p) => p.from <= p.until);
+}
+
+function withoutPain(items, zones) {
+  const removed = [];
+  const hurts = (info) => strainOf(info).some((z) => zones.includes(z));
+  const kept = items.flatMap((e) => {
+    if (e.circuit) {
+      const circuit = e.circuit.filter((c) => !hurts(c.info || e.info));
+      e.circuit.filter((c) => !circuit.includes(c)).forEach((c) => removed.push(c.name));
+      if (!circuit.length) return [];
+      if (circuit.length === e.circuit.length) return [e];
+      if (!circuit.some((c) => c.label)) circuit[0] = { ...circuit[0], label: circuit[0].name };
+      return [{ ...e, circuit, info: [...new Set(circuit.map((c) => c.info).filter(Boolean))] }];
+    }
+    if (hurts(e.info)) { removed.push(e.name); return []; }
+    return [e];
+  });
+  return { kept, removed: [...new Set(removed)] };
+}
+
+const PAIN_FALLBACK = { name: 'Mobilité douce et étirements', info: 'etirements', work: 900, timed: true, note: 'Bouge sans douleur, amplitude confortable.' };
+
 export function buildSession(key, date, state, express = false) {
   const info = weekInfo(date, state.settings.startDate);
   const a = state.adapt;
@@ -221,14 +295,32 @@ export function buildSession(key, date, state, express = false) {
   const t = TEMPLATES[variant];
   const type = t.type;
   const f = info.mult * (a[type] ?? 1);
-  const p = prescriptions(latestBench(state));
+  const bench = latestBench(state);
+  const p = prescriptions(bench);
   const ctx = { f, info, p, g: a.gradeIdx, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
-  const items = raw.filter((e) => e.kind !== 'note');
+  let items = raw.filter((e) => e.kind !== 'note');
+
+  const day = ymd(date);
+  const pains = activePains(state, day);
+  const zones = Object.keys(pains);
+  if (zones.length) {
+    const { kept, removed } = withoutPain(items, zones);
+    items = kept.length ? kept : [PAIN_FALLBACK];
+    const until = parseYmd(Object.values(pains).sort().at(-1)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+    const names = zones.map((z) => ZONES[z].toLowerCase()).join(', ');
+    if (removed.length) notes.unshift(`Douleur signalée (${names}) : ${removed.join(', ')} ${removed.length > 1 ? 'retirés' : 'retiré'} jusqu'au ${until}. Si la douleur dure plus d'une semaine, consulte.`);
+    if (zones.includes('doigts') && type === 'escalade' && !t.home) notes.unshift('Doigts douloureux : grimpe facile uniquement, sur grosses prises, sans réglettes.');
+  }
+
+  // Carnet de charges : à la maison et en muscu, l'objectif suit tes dernières séances.
+  const track = (t.home || type === 'muscu') && !t.reference;
   const exercises = items.map((e, i) => {
     const x = { sets: 1, ...e };
     x.restAfter = i === items.length - 1 ? 0 : (e.restAfter ?? t.restAfter ?? 90);
+    x.lift = track ? liftPlan(x, state, day, { resetBefore: bench.date, hold: info.phaseIndex === 3 }) : null;
+    if (x.load && x.lift?.target.kg != null) x.load = { ...x.load, kg: x.lift.target.kg };
     x.detail = describe(x);
     x.timer = timerFor(x);
     x.seconds = exerciseSeconds(x);
@@ -362,11 +454,11 @@ const TEMPLATES = {
     type: 'muscu', title: 'Muscu haut du corps et gainage', restAfter: 90,
     build: ({ sets, p }) => [
       WARMUP_GYM(420, '5 min de rameur ou de vélo, puis mobilité nuque et épaules.'),
-      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '10', work: 40, rest: 90 },
-      { name: 'Rowing assis poulie, prise neutre', info: 'rowing-poulie', sets: sets(3), reps: '10', work: 40, rest: 90, note: 'Épaules basses.' },
-      { name: 'Développé épaules haltères assis', info: 'developpe-epaules', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 40, rest: 90 },
+      { name: 'Rowing assis poulie, prise neutre', info: 'rowing-poulie', sets: sets(3), reps: '8 à 12', load: GYM(5), work: 40, rest: 90, note: 'Épaules basses.' },
+      { name: 'Développé épaules haltères assis', info: 'developpe-epaules', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 40, rest: 90 },
       { name: 'Pompes ou dips assistés (machine)', info: ['pompes', 'dips-machine'], sets: sets(3), reps: '8 à 12', work: 40, rest: 75 },
-      { name: 'Face pull à la poulie', info: 'face-pull', sets: sets(3), reps: '15', work: 45, rest: 60, note: 'Léger. Excellent pour la nuque et les épaules de grimpeur.' },
+      { name: 'Face pull à la poulie', info: 'face-pull', sets: sets(3), reps: '15', load: GYM(2.5), work: 45, rest: 60, note: 'Léger. Excellent pour la nuque et les épaules de grimpeur.' },
       { name: 'Rotations externes', info: 'rotations-externes', sets: sets(2), reps: '15 par bras', work: 70, rest: 45, note: 'Poulie basse ou élastique, coude collé au corps.', restAfter: 60 },
       { name: 'Extensions des doigts (élastique)', info: 'extensions-doigts', sets: sets(2), reps: '20', work: 40, rest: 30, note: 'Antagonistes des fléchisseurs, protège les poulies.', restAfter: 60 },
       PLANK(sets(3), p.plank),
@@ -376,10 +468,10 @@ const TEMPLATES = {
     type: 'muscu', title: 'Muscu bas du corps et course', restAfter: 90, run: true,
     build: ({ f, sets, p }) => [
       WARMUP_GYM(300, '5 min de vélo, squats au poids du corps, mobilité hanches et dos.'),
-      { name: 'Presse à cuisses ou goblet squat', info: ['presse', 'goblet-squat'], sets: sets(3), reps: '10', work: 45, rest: 120 },
-      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '10', work: 45, rest: 120, note: 'Dos neutre, charge modérée.' },
-      { name: 'Fentes marchées', info: 'fentes-marchees', sets: sets(3), reps: '10 par jambe', work: 70, rest: 90 },
-      { name: 'Hip thrust machine', info: 'hip-thrust', sets: sets(3), reps: '12', work: 45, rest: 90 },
+      { name: 'Presse à cuisses ou goblet squat', info: ['presse', 'goblet-squat'], sets: sets(3), reps: '8 à 12', load: GYM(5), work: 45, rest: 120 },
+      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 45, rest: 120, note: 'Dos neutre, charge modérée.' },
+      { name: 'Fentes marchées', info: 'fentes-marchees', sets: sets(3), reps: '10 par jambe', load: GYM(2), work: 70, rest: 90 },
+      { name: 'Hip thrust machine', info: 'hip-thrust', sets: sets(3), reps: '10 à 15', load: GYM(5), work: 45, rest: 90 },
       SIDE_PLANK_CIRCUIT(sets(3)),
       { name: 'Course sur tapis', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: easyRun(p) },
     ],
@@ -388,10 +480,10 @@ const TEMPLATES = {
     type: 'muscu', title: 'Muscu corps complet et course', restAfter: 90, run: true,
     build: ({ f, sets, p }) => [
       WARMUP_GYM(300, '5 min de rameur, mobilité nuque, épaules et hanches.'),
-      { name: 'Goblet squat ou presse', info: ['goblet-squat', 'presse'], sets: sets(3), reps: '10', work: 45, rest: 120 },
-      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '10', work: 40, rest: 90 },
-      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '10', work: 45, rest: 120, note: 'Dos neutre.' },
-      { name: 'Développé épaules haltères', info: 'developpe-epaules', sets: sets(3), reps: '10', work: 40, rest: 90 },
+      { name: 'Goblet squat ou presse', info: ['goblet-squat', 'presse'], sets: sets(3), reps: '8 à 12', load: GYM(5), work: 45, rest: 120 },
+      { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 40, rest: 90 },
+      { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 45, rest: 120, note: 'Dos neutre.' },
+      { name: 'Développé épaules haltères', info: 'developpe-epaules', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 40, rest: 90 },
       {
         name: 'Face pull et rotations externes', info: ['face-pull', 'rotations-externes'], sets: sets(3), rest: 60, note: 'Léger.',
         circuit: [
@@ -428,13 +520,13 @@ const TEMPLATES = {
         },
         { name: 'Suspensions actives', info: 'suspensions', sets: sets(4), work: p.hang, timed: true, rest: 40, note: 'Épaules engagées. Prise large et confortable, pas du bout des doigts.' },
         weighted
-          ? { name: 'Tractions lestées', info: 'tractions', sets: sets(4), reps: `3 à 5 avec le gilet à ${p.vest} kg`, work: 25, rest: 150, note: 'Amplitude complète, sans élan.' }
+          ? { name: 'Tractions lestées', info: 'tractions', sets: sets(4), reps: '3 à 5', load: VEST(p.vest), work: 25, rest: 150, note: 'Amplitude complète, sans élan.' }
           : { name: 'Tractions', info: 'tractions', sets: sets(4), reps: p.pullReps, work: 30, rest: 120, note: 'Amplitude complète, sans élan. Garde 1 à 2 répétitions en réserve.' },
         { name: 'Tractions négatives', info: 'tractions-negatives', sets: sets(3), reps: '3', work: 25, rest: 90, note: 'Descente en 5 secondes.' },
-        { name: 'Pince de préhension', info: 'pince', sets: sets(3), reps: '8 à 10 par main', work: 60, rest: 90, note: `${p.grip ? `Pince réglée à ${p.grip} kg.` : 'Règle la pince pour 8 à 10 fermetures difficiles mais propres.'} Stop à la moindre douleur dans un doigt.` },
+        { name: 'Pince de préhension', info: 'pince', sets: sets(3), reps: '8 à 10 par main', load: GRIP(p.grip), work: 60, rest: 90, note: `${p.grip ? '' : 'Règle la pince pour 8 à 10 fermetures difficiles mais propres. '}Stop à la moindre douleur dans un doigt.` },
         { name: 'Relevés de genoux suspendu', info: 'releves-genoux', sets: sets(3), reps: '8 à 10', work: 30, rest: 60, note: 'Sans balancer.' },
         { name: 'Pompes', info: 'pompes', sets: sets(3), reps: p.pushReps, work: 35, rest: 60, note: 'Antagonistes des tractions.' },
-        { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 par bras', work: 70, rest: 45, note: 'Haltère à 3 ou 4 kg, main libre sur une chaise. Bon pour la nuque et le haut du dos.' },
+        { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, note: 'Main libre sur une chaise. Bon pour la nuque et le haut du dos.' },
         { name: 'Gainage creux (hollow)', info: 'hollow', sets: sets(3), work: 30, timed: true, rest: 30, note: 'Bas du dos plaqué au sol.', restAfter: 30 },
         { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements avant-bras, pectoraux, nuque et dos.' },
       ];
@@ -454,9 +546,9 @@ const TEMPLATES = {
         ],
       },
       { name: 'Pyramide de tractions', info: 'tractions', sets: 7, setLabels: ['1', '2', '3', '4', '3', '2', '1'].map((n) => `${n} traction${n === '1' ? '' : 's'}`), work: 15, rest: 30, unit: 'paliers', note: 'Repos = le temps passé à tirer. Arrête si les tractions deviennent moches.' },
-      { name: 'Pince endurance', info: 'pince', sets: sets(3), reps: '20 par main', work: 80, rest: 60, note: `${p.gripEndurance ? `Pince réglée à ${p.gripEndurance} kg` : 'Pince légère : 20 fermetures doivent être faisables'}, rythme régulier.` },
+      { name: 'Pince endurance', info: 'pince', sets: sets(3), reps: '20 par main', load: GRIP(p.gripEndurance), work: 80, rest: 60, note: `${p.gripEndurance ? 'Rythme régulier.' : 'Pince légère : 20 fermetures doivent être faisables, rythme régulier.'}` },
       { name: 'Superman', info: 'superman', sets: sets(3), reps: '12 lents', work: 40, rest: 45, note: 'Regard vers le sol pour protéger la nuque.' },
-      { name: 'Extensions de poignets', info: 'extensions-poignets', sets: sets(2), reps: '15 par bras', work: 60, rest: 30, note: 'Haltère à 3 ou 4 kg. Antagonistes des avant-bras.', restAfter: 30 },
+      { name: 'Extensions de poignets', info: 'extensions-poignets', sets: sets(2), reps: '15 à 20 par bras', load: DB(3), work: 60, rest: 30, note: 'Antagonistes des avant-bras.', restAfter: 30 },
       { name: 'Retour au calme', info: 'etirements-grimpe', work: 300, timed: true, note: 'Étirements avant-bras, épaules, nuque et dos.' },
     ],
   },
@@ -465,15 +557,15 @@ const TEMPLATES = {
     build: ({ info, sets, p }) => [
       WARMUP_GYM(300, '2 min de jumping jacks, cercles de bras, 10 pompes inclinées sur une chaise.'),
       (p.weightedPush ?? info.week >= 5)
-        ? { name: 'Pompes lestées', info: 'pompes', sets: sets(4), reps: '12 à 15', work: 40, rest: 90, note: `Avec le gilet à ${p.vestPush} kg, descente en 2 secondes.` }
+        ? { name: 'Pompes lestées', info: 'pompes', sets: sets(4), reps: '12 à 15', load: VEST(p.vestPush), work: 40, rest: 90, note: 'Descente en 2 secondes.' }
         : { name: 'Pompes', info: 'pompes', sets: sets(4), reps: p.pushReps, work: 40, rest: 90, note: 'Descente en 2 secondes.' },
-      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '12 par bras', work: 80, rest: 60, note: 'Haltère à 10 kg, pause d\'une seconde en haut.' },
+      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '10 à 15 par bras', load: DB(10), work: 80, rest: 60, note: 'Pause d\'une seconde en haut.' },
       { name: 'Pompes piquées (épaules)', info: 'pompes-piquees', sets: sets(3), reps: '8 à 10', work: 35, rest: 90, note: 'Hanches hautes, tête vers le sol.' },
-      { name: 'Développé épaules un bras', info: 'developpe-epaules', sets: sets(3), reps: '10 par bras', work: 70, rest: 60, note: 'Debout et gainé, haltère à 6 à 8 kg.' },
-      { name: 'Élévations latérales un bras', info: 'elevations-laterales', sets: sets(3), reps: '12 par bras', work: 70, rest: 45, note: 'Haltère à 3 ou 4 kg, lent.', restAfter: 60 },
-      { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 par bras', work: 70, rest: 45, note: 'Haltère à 3 ou 4 kg, main libre sur une chaise.', restAfter: 60 },
+      { name: 'Développé épaules un bras', info: 'developpe-epaules', sets: sets(3), reps: '8 à 12 par bras', load: DB(6), work: 70, rest: 60, note: 'Debout et gainé.' },
+      { name: 'Élévations latérales un bras', info: 'elevations-laterales', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, note: 'Lent, sans élan.', restAfter: 60 },
+      { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, note: 'Main libre sur une chaise.', restAfter: 60 },
       { name: 'Pompes diamant (triceps)', info: 'pompes-diamant', sets: sets(2), reps: '8 à 12', work: 35, rest: 60, note: 'Mains rapprochées. Remplace les dips.', restAfter: 60 },
-      { name: 'Curl un bras', info: 'curl', sets: sets(2), reps: '10 par bras', work: 60, rest: 45, note: 'Haltère à 7 à 9 kg, tempo lent.', restAfter: 60 },
+      { name: 'Curl un bras', info: 'curl', sets: sets(2), reps: '8 à 12 par bras', load: DB(7), work: 60, rest: 45, note: 'Tempo lent.', restAfter: 60 },
       PLANK(sets(3), p.plank),
     ],
   },
@@ -483,7 +575,7 @@ const TEMPLATES = {
       WARMUP_GYM(300, 'Squats au poids du corps, fentes, mobilité des hanches et du dos.'),
       { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(4), reps: `${p.squatReps}`, work: 60, rest: 90, note: 'Haltère 10 kg et gilet 8 kg, descente en 3 secondes pour compenser la charge légère.' },
       { name: 'Fentes bulgares', info: 'fentes-bulgares', sets: sets(3), reps: '10 par jambe', work: 90, rest: 90, note: 'Pied arrière sur une chaise, gilet 8 kg.' },
-      { name: 'Soulevé de terre roumain sur une jambe', info: 'souleve-roumain-unilateral', sets: sets(3), reps: '10 par jambe', work: 90, rest: 60, note: 'Haltère 10 kg dans la main opposée à la jambe d\'appui, dos neutre.' },
+      { name: 'Soulevé de terre roumain sur une jambe', info: 'souleve-roumain-unilateral', sets: sets(3), reps: '10 à 12 par jambe', load: DB(10), work: 90, rest: 60, note: 'Haltère dans la main opposée à la jambe d\'appui, dos neutre.' },
       { name: 'Hip thrust au sol lesté', info: 'hip-thrust', sets: sets(3), reps: '15', work: 45, rest: 60, note: 'Gilet 8 kg et haltère 10 kg sur les hanches.', restAfter: 60 },
       { name: 'Mollets sur une marche', info: 'mollets', sets: sets(3), reps: '20', work: 45, rest: 45, note: 'Sur une jambe si c\'est trop facile.', restAfter: 60 },
       SIDE_PLANK_CIRCUIT(sets(3)),
@@ -496,10 +588,10 @@ const TEMPLATES = {
       WARMUP_GYM(300, 'Jumping jacks, mobilité nuque, épaules et hanches.'),
       { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(3), reps: `${p.squatReps}`, work: 60, rest: 90, note: 'Haltère 10 kg et gilet 8 kg.' },
       { name: 'Pompes', info: 'pompes', sets: sets(3), reps: p.pushReps, work: 40, rest: 75 },
-      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '12 par bras', work: 80, rest: 60, note: 'Haltère à 10 kg.' },
+      { name: 'Rowing haltère un bras', info: 'rowing-haltere', sets: sets(3), reps: '10 à 15 par bras', load: DB(10), work: 80, rest: 60 },
       { name: 'Fentes bulgares', info: 'fentes-bulgares', sets: sets(3), reps: '10 par jambe', work: 90, rest: 90, note: 'Gilet 8 kg.' },
-      { name: 'Développé épaules un bras', info: 'developpe-epaules', sets: sets(3), reps: '10 par bras', work: 70, rest: 60, note: 'Haltère à 6 à 8 kg.' },
-      { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 par bras', work: 70, rest: 45, note: 'Haltère à 3 ou 4 kg.', restAfter: 60 },
+      { name: 'Développé épaules un bras', info: 'developpe-epaules', sets: sets(3), reps: '8 à 12 par bras', load: DB(6), work: 70, rest: 60 },
+      { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, restAfter: 60 },
       PLANK(sets(3), p.plank),
       { name: 'Course dehors', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: easyRun(p) },
     ],

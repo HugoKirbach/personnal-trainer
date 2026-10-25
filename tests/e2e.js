@@ -31,6 +31,42 @@ try {
   await shot('0b-express');
   await page.click(`${PLAN} [data-express]`);
 
+  // Carnet de charges : noter les séries d'un exercice maison.
+  check(await page.isVisible(`${PLAN} .ex-lift`), 'carnet de charges affiché');
+  await page.click(`${PLAN} [data-lift] >> nth=0`);
+  await page.waitForSelector('[data-form="lift"]');
+  await shot('0d-carnet');
+  await page.click('[data-form="lift"] button.primary');
+  check((await page.textContent('#toast')).includes('Prochaine fois'), 'objectif suivant proposé');
+  check((await page.textContent(`${PLAN} .ex-lift.done`)).includes('5 · 5 · 5'), 'séries notées');
+
+  // Séance guidée : compteurs sur une série comptée, annonces vocales coupables.
+  await page.click(`${PLAN} [data-guided]`);
+  await page.waitForSelector('.guided');
+  for (let k = 0; k < 60 && !(await page.isVisible('#g-lift')); k++) await page.click('#g-nextbtn');
+  check(await page.isVisible('#g-lift'), 'compteurs de répétitions');
+  check((await page.inputValue('#g-reps')) === '5', 'série déjà notée reprise');
+  await page.click('[data-lstep="reps:1"]');
+  await shot('0f-guidee-series');
+  await page.click('#g-voice');
+  check((await page.textContent('#g-voice')) === '🔇', 'annonces vocales coupées');
+  await page.click('#g-nextbtn');
+  await page.click('#g-quit');
+  await page.click('#g-quit');
+  await page.waitForSelector('.session');
+  check((await page.textContent(`${PLAN} .ex-lift.done`)).includes('6 · 5 · 5'), 'série enregistrée depuis la séance guidée');
+
+  // Douleur aux doigts : exercices retirés, puis rétablis.
+  await page.click('.pain-card summary');
+  await page.click('.pain-card .chip-check:has-text("Doigts")');
+  await page.click('[data-form="pain"] button.primary');
+  await page.waitForSelector('.pain-card.active');
+  check((await page.textContent(PLAN)).includes('Douleur signalée'), 'note sur les exercices retirés');
+  check(!(await page.textContent(`${PLAN} .exercises`)).includes('Suspensions actives'), 'suspensions retirées');
+  await shot('0e-douleur');
+  await page.click('[data-heal="doigts"]');
+  check((await page.textContent(`${PLAN} .exercises`)).includes('Suspensions actives'), 'exercices rétablis');
+
   // Active les accès en salle.
   await page.click('nav [data-go="settings"]');
   await page.check('input[name=accessEscalade]');
@@ -41,6 +77,14 @@ try {
   check(/au total/.test(await page.textContent(`${PLAN} .total`)), 'temps total affiché');
   check((await page.textContent('.ex-meta >> nth=0')).includes('de repos avant l\'exercice suivant'), 'repos entre exercices affiché');
   await shot('1-aujourdhui');
+
+  // Carnet d'escalade : un bloc enchaîné, repris dans la cotation max.
+  await page.click(`${PLAN} .climbs summary`);
+  await page.selectOption(`${PLAN} [data-form="climb"] select[name=grade]`, '6b');
+  await page.click(`${PLAN} [data-form="climb"] button`);
+  check((await page.textContent(`${PLAN} .climb-list`)).includes('6b'), 'bloc noté');
+  check((await page.inputValue('[data-form="log"] select[name=maxGrade]')) === '6b', 'cotation max préremplie');
+  await shot('1a-carnet-escalade');
 
   // Prise de référence : saisie des résultats et adaptation.
   check(await page.isVisible('.ref-wrap[open]'), 'prise de référence proposée');
@@ -106,7 +150,9 @@ try {
   await page.click('nav [data-go="stats"]');
   check((await page.$$('svg.chart')).length >= 3, 'graphiques affichés');
   check((await page.textContent('.tiles')).includes('6b+'), 'niveau cible relevé par la cotation max');
-  check((await page.textContent('.table-scroll')).includes('Tractions max'), 'tableau des références');
+  check((await page.textContent('.table-scroll >> nth=1')).includes('Tractions max'), 'tableau des références');
+  check((await page.textContent('table.lifts')).includes('Tractions'), 'carnet de charges dans le suivi');
+  check((await page.textContent('#main')).includes('Pyramide'), 'pyramide d\'escalade');
   await shot('4-suivi');
 
   // Réglages : passer à 5 séances.
@@ -116,6 +162,7 @@ try {
   await page.click('nav [data-go="week"]');
   check((await page.$$('.day-session')).length === 5, '5 séances après réglage');
   await page.click('nav [data-go="settings"]');
+  check(!(await page.isChecked('input[name=voice]')), 'réglage des annonces vocales');
   await shot('5-reglages');
 
   // Persistance après rechargement.

@@ -1,13 +1,17 @@
 import {
-  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, adapt, benchDue, benchSummary, buildSession, fmtDuration, mondayOf, parseYmd,
-  referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
+  BENCH_TESTS, DAYS, GRADES, TYPES, SCHEDULES, ZONES, activePains, adapt, addPains, benchDue, benchSummary, buildSession, fmtDuration, healPain,
+  mondayOf, parseYmd, referenceSession, sessionsOn, tipFor, weekInfo, weekSessions, ymd,
 } from './program.js';
 import { load, save, defaults } from './store.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
-import { weeklyBars, feelingDots, gradeLine, bindTooltips } from './charts.js';
+import {
+  CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, bindTooltips,
+} from './charts.js';
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
 import { GUIDES, videoUrl } from './guides.js';
+import { fmtKg, formatSets, liftProgress, recordSet, saveLift, setsOn, suggestLift } from './lifts.js';
+import { speak, stopSpeaking } from './voice.js';
 
 let state = load();
 let view = 'today';
@@ -15,9 +19,12 @@ let weekOffset = 0;
 let openSession = null; // { date, index } affiché en détail depuis la semaine
 let refOpen = false; // bloc « prise de référence » déplié
 let editBench = null; // date des résultats de référence en cours de modification
+let lastClimb = { kind: 'bloc', grade: null }; // dernier type et cotation saisis dans le carnet d'escalade
+let painOpen = false; // formulaire « Signaler une douleur » déplié
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const persist = () => { save(state); writePlan(); };
+const shortDate = (d) => parseYmd(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 
 // ---------- Chrono ----------
 let timerView = { mode: 'stopwatch', display: 0, label: 'Chrono', laps: [], running: false, progress: null };
@@ -55,6 +62,7 @@ function loadTimer(cfg) {
 let guided = null;
 let guidedId = null;
 let guidedView = null;
+let liftStep = null; // étape dont les compteurs répétitions / charge sont affichés
 
 function findSession(id) {
   const [date, idx] = id.split('#');
@@ -81,6 +89,7 @@ function startGuided(id) {
       releaseWake();
       notify('Séance terminée 💪', 'Pense à noter ton ressenti.', 'timer');
     },
+    onSpeak: (text) => { if (state.settings.voice) speak(text); },
   });
   go('guided');
   guided.start();
@@ -89,6 +98,7 @@ function startGuided(id) {
 
 function quitGuided() {
   guided?.stop();
+  stopSpeaking();
   releaseWake();
   const id = guidedId;
   guided = null;
@@ -105,7 +115,7 @@ function quitGuided() {
 function openGuide(ids) {
   const list = ids.split(',').map((k) => GUIDES[k]).filter(Boolean);
   if (!list.length) return;
-  $('#sheet-body').innerHTML = list.map((g) => `<section class="guide">
+  openSheet(list.map((g) => `<section class="guide">
       <h2>${esc(g.title)}</h2>
       <h3>Comment faire</h3>
       <ol>${g.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
@@ -113,9 +123,90 @@ function openGuide(ids) {
       <ul>${g.errors.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${g.tip ? `<p class="tip">💡 ${esc(g.tip)}</p>` : ''}
       <a class="btn video" href="${videoUrl(g)}" target="_blank" rel="noopener">▶ Voir des vidéos de démonstration</a>
-    </section>`).join('');
+    </section>`).join(''));
+}
+
+function openSheet(html) {
+  $('#sheet-body').innerHTML = html;
   $('#sheet').hidden = false;
   $('#sheet .sheet-card').scrollTop = 0;
+}
+
+// ---------- Carnet de charges ----------
+const targetText = (t) => `${t.reps} rép.${t.kg != null ? ` à ${fmtKg(t.kg)}` : ''}`;
+
+function liftLine(e, date) {
+  const l = e.lift;
+  const today = setsOn(state, l.key, date);
+  if (today.some(Boolean)) return `<span class="ex-lift done">✓ Noté : ${formatSets({ sets: today })}</span>`;
+  if (!l.last) return `<span class="ex-lift">📒 Première fois : note tes séries pour suivre ta progression</span>`;
+  return `<span class="ex-lift">📒 Dernière fois : ${formatSets(l.last)} → objectif <strong>${targetText(l.target)}</strong></span>`;
+}
+
+function openLiftSheet(id, i) {
+  const s = findSession(id);
+  const e = s.exercises[i];
+  const l = e.lift;
+  const today = setsOn(state, l.key, s.date);
+  const kg = today.find(Boolean)?.kg ?? l.target.kg ?? '';
+  openSheet(`<form data-form="lift" data-id="${id}" data-ex="${i}" class="stack lift-form">
+      <h2>${esc(e.name)}</h2>
+      <p class="small muted">${esc(e.detail)}</p>
+      ${l.last ? `<p class="small">Dernière fois (${shortDate(l.last.date)}) : <strong>${formatSets(l.last)}</strong></p>` : ''}
+      ${l.reset ? '<p class="small muted">Charge recalée sur ta dernière prise de référence.</p>' : ''}
+      <p class="tip">🎯 Objectif : ${targetText(l.target)} par série${l.target.reason ? ` (${esc(l.target.reason)})` : ''}</p>
+      <div class="grid3">${Array.from({ length: e.sets }, (_, k) => `<label>Série ${k + 1}
+        <span class="unit-input"><input type="number" inputmode="numeric" min="0" max="300" name="reps${k}" value="${today[k]?.reps ?? l.target.reps}"><span>rép.</span></span></label>`).join('')}</div>
+      ${e.load ? `<label>Charge (${e.load.tool})
+        <span class="unit-input"><input type="number" inputmode="decimal" step="${e.load.step}" min="${e.load.min}" max="${e.load.max}" name="kg" value="${kg}"><span>kg</span></span></label>` : ''}
+      <p class="small muted">Vide une série que tu n'as pas faite.</p>
+      <button class="primary">Enregistrer</button>
+    </form>`);
+}
+
+// Compteurs répétitions / charge de la séance guidée, sur les séries comptées.
+function guidedLiftEx(st) {
+  if (!guided || st.kind !== 'work' || st.timed || st.countUp || st.set == null) return null;
+  const e = guided.session.exercises[st.ex];
+  return e.lift ? e : null;
+}
+
+function paintLift(v) {
+  const box = $('#g-lift');
+  const e = guidedLiftEx(v.step);
+  box.hidden = !e;
+  if (!e || liftStep === v.index) return;
+  liftStep = v.index;
+  const today = setsOn(state, e.lift.key, guided.session.date);
+  const done = today[v.step.set];
+  $('#g-reps').value = done?.reps ?? e.lift.target.reps;
+  $('#g-kgwrap').hidden = !e.load;
+  $('#g-kg').value = done?.kg ?? today[v.step.set - 1]?.kg ?? e.lift.target.kg ?? '';
+  $('#g-kg').step = e.load?.step ?? 1;
+}
+
+function recordGuidedLift() {
+  const st = guidedView?.step;
+  const e = st && !guidedView.done && guidedLiftEx(st);
+  if (!e) return;
+  const reps = Number($('#g-reps').value);
+  if (!(reps > 0)) return;
+  const kg = e.load && $('#g-kg').value !== '' ? Number($('#g-kg').value) : null;
+  recordSet(state, e.lift.key, guided.session.date, st.set, { reps, kg });
+  save(state);
+}
+
+function stepLift(field, dir) {
+  const st = guidedView?.step;
+  const e = st && guidedLiftEx(st);
+  if (!e) return;
+  const input = field === 'reps' ? $('#g-reps') : $('#g-kg');
+  if (field === 'reps') input.value = Math.max(0, (Number(input.value) || 0) + dir);
+  else {
+    const { step, min, max } = e.load;
+    const cur = input.value === '' ? min - (dir > 0 ? step : 0) : Number(input.value);
+    input.value = Math.round(Math.min(max, Math.max(min, cur + dir * step)) * 10) / 10;
+  }
 }
 
 // ---------- Notifications ----------
@@ -186,6 +277,7 @@ function render() {
     today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings, guided: renderGuided,
   }[view]();
   if (view === 'timer') paintTimer();
+  liftStep = null;
   if (view === 'guided') paintGuided();
 }
 
@@ -195,6 +287,9 @@ function renderToday() {
   const list = sessionsOn(now, state);
   const dateLabel = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   let html = `<h1 class="cap">${dateLabel}</h1>`;
+  const today = ymd(now);
+  const hurting = Object.keys(activePains(state, today)).length > 0;
+  if (hurting) html += painCard(today);
   const due = benchDue(state, now);
   const refBlock = `<details class="card ref-wrap" ${due.due || refOpen ? 'open' : ''}>
       <summary>📏 Prise de référence ${due.due ? '<span class="pill due">À faire</span>' : `<span class="muted small">· prochaine dans ${due.inDays} j</span>`}</summary>
@@ -210,6 +305,8 @@ function renderToday() {
   }
   list.forEach((s) => { html += sessionCard(s); });
   if (!due.due) html += refBlock;
+  if (!list.some((s) => s.type === 'escalade' && !s.home)) html += `<section class="card">${climbLogger(today, 'Grimpé hors programme ? Note tes voies et blocs ici.')}</section>`;
+  if (!hurting) html += painCard(today);
   html += `<details class="card"><summary>Noter une séance hors programme</summary>
     <form data-form="extra" class="stack">
       <label>Type <select name="type">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('')}</select></label>
@@ -218,6 +315,58 @@ function renderToday() {
       <button class="primary">Enregistrer</button>
     </form></details>`;
   return html;
+}
+
+// ---------- Douleurs ----------
+function zoneChips(name, exclude = []) {
+  return `<div class="chips zone-chips">${Object.entries(ZONES).filter(([k]) => !exclude.includes(k)).map(([k, l]) => `<label class="chip-check"><input type="checkbox" name="${name}" value="${k}"><span>${l}</span></label>`).join('')}</div>`;
+}
+
+function painCard(day) {
+  const active = activePains(state, day);
+  const zones = Object.keys(active);
+  const form = `<form data-form="pain" data-date="${day}" class="stack">
+      ${zoneChips('zone', zones)}
+      <p class="small muted">Pendant 7 jours, les exercices qui sollicitent ces zones sont retirés de tes séances. Douleur vive, gonflement ou douleur qui dure : consulte.</p>
+      <button class="primary">Adapter mes séances</button>
+    </form>`;
+  if (!zones.length) return `<details class="card pain-card" ${painOpen ? 'open' : ''}><summary>🩹 Signaler une douleur</summary>${form}</details>`;
+  return `<section class="card pain-card active">
+      <h2>🩹 Douleur en cours</h2>
+      <p class="small muted">Les exercices qui sollicitent ces zones sont retirés de tes séances.</p>
+      <ul class="pain-list">${zones.map((z) => `<li><span><strong>${ZONES[z]}</strong> <span class="muted small">jusqu'au ${shortDate(active[z])}</span></span>
+        <button data-heal="${z}">Ça va mieux</button></li>`).join('')}</ul>
+      ${zones.length < Object.keys(ZONES).length ? `<details ${painOpen ? 'open' : ''}><summary class="small">Signaler une autre douleur</summary>${form}</details>` : ''}
+    </section>`;
+}
+
+// ---------- Carnet d'escalade ----------
+const sentClimb = (c) => c.style !== 'travail';
+
+function bestClimb(date) {
+  const sends = (state.climbs || []).filter((c) => c.date === date && sentClimb(c));
+  const pick = sends.some((c) => c.kind === 'voie') ? sends.filter((c) => c.kind === 'voie') : sends;
+  return pick.reduce((best, c) => (GRADES.indexOf(c.grade) > GRADES.indexOf(best ?? '') ? c.grade : best), null);
+}
+
+function climbLogger(date, intro = 'Note chaque voie ou bloc au fil de la séance.') {
+  const list = (state.climbs || []).filter((c) => c.date === date);
+  const grade = lastClimb.grade ?? GRADES[state.adapt.gradeIdx];
+  const sends = list.filter(sentClimb).length;
+  return `<details class="climbs" ${list.length || lastClimb.open === date ? 'open' : ''}>
+      <summary>🧗 Carnet d'escalade${list.length ? ` <span class="muted small">· ${sends} enchaînée${sends > 1 ? 's' : ''} sur ${list.length}</span>` : ''}</summary>
+      ${list.length ? `<ul class="climb-list">${list.map((c) => `<li><span class="grade-tag${c.kind === 'bloc' ? ' bloc' : ''}">${c.grade}</span>
+        <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}</span>
+        <button class="link" data-climb-del="${c.id}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : `<p class="small muted">${intro}</p>`}
+      <form data-form="climb" data-date="${date}" class="stack climb-form">
+        <div class="climb-row">
+          <div class="seg">${['bloc', 'voie'].map((k) => `<label><input type="radio" name="kind" value="${k}" ${lastClimb.kind === k ? 'checked' : ''}><span>${k === 'voie' ? 'Voie' : 'Bloc'}</span></label>`).join('')}</div>
+          <select name="grade" aria-label="Cotation">${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}</select>
+        </div>
+        <div class="seg">${Object.entries(CLIMB_STYLES).map(([k, l]) => `<label><input type="radio" name="style" value="${k}" ${k === 'enchaine' ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+        <button>+ Ajouter</button>
+      </form>
+    </details>`;
 }
 
 function nextSession(from) {
@@ -254,18 +403,21 @@ function sessionCard(s) {
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
           <span><strong>${esc(e.name)}</strong><br><span class="small">${esc(e.detail)}</span>
-          <span class="ex-meta">≈ ${fmtDuration(e.seconds)}${e.restAfter ? ` · puis ${fmtDuration(e.restAfter)} de repos avant l'exercice suivant` : ''}</span></span></label>
+          <span class="ex-meta">≈ ${fmtDuration(e.seconds)}${e.restAfter ? ` · puis ${fmtDuration(e.restAfter)} de repos avant l'exercice suivant` : ''}</span>
+          ${e.lift ? liftLine(e, s.date) : ''}</span></label>
         <span class="ex-actions">
           ${e.info ? `<button class="icon-btn info-btn" data-info="${[].concat(e.info).join(',')}" aria-label="Tuto : ${esc(e.name)}">i</button>` : ''}
+          ${e.lift ? `<button class="icon-btn" data-lift="${id}|${i}" aria-label="Noter mes séries">📒</button>` : ''}
           ${e.timer ? `<button class="icon-btn" data-timer='${esc(JSON.stringify(e.timer))}' aria-label="Lancer le chrono">⏱</button>` : ''}
         </span>
       </li>`).join('')}
     </ol>
-    ${s.reference ? benchForm(s.date) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}
+    ${s.type === 'escalade' && !s.home && !s.reference ? climbLogger(s.date) : ''}
+    ${s.reference ? benchForm(s.date) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}${log.zones?.length ? `, douleur ${log.zones.map((z) => ZONES[z].toLowerCase()).join(', ')}` : ''}
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
         <h3>Comment ça s'est passé ?</h3>
-        ${feedbackFields(id, false, s.home ? 'maison' : s.type, hasRun)}
+        ${feedbackFields(id, false, s.home ? 'maison' : s.type, hasRun, bestClimb(s.date))}
         <button class="primary">Terminer la séance</button>
       </form>`}
   </section>`;
@@ -292,13 +444,13 @@ function benchForm(date) {
     </form>`;
 }
 
-function feedbackFields(id, free, type, hasRun) {
+function feedbackFields(id, free, type, hasRun, maxGrade = null) {
   return `<div class="seg" role="radiogroup" aria-label="Ressenti">
       ${['facile', 'ok', 'dur'].map((f) => `<label><input type="radio" name="feeling" value="${f}" required><span>${feelLabel(f)}</span></label>`).join('')}
     </div>
     ${free || hasRun ? `<label class="row"><input type="checkbox" name="stopped"> J'ai arrêté ${free ? 'la séance' : 'la course'} avant la fin</label>` : ''}
-    ${free || type === 'escalade' ? `<label>Cotation max enchaînée (escalade) <select name="maxGrade"><option value="">—</option>${GRADES.map((g) => `<option>${g}</option>`).join('')}</select></label>` : ''}
-    <label class="row"><input type="checkbox" name="pain"> Douleur (doigts, nuque, dos…)</label>
+    ${free || type === 'escalade' ? `<label>Cotation max enchaînée (escalade) <select name="maxGrade"><option value="">—</option>${GRADES.map((g) => `<option ${g === maxGrade ? 'selected' : ''}>${g}</option>`).join('')}</select></label>` : ''}
+    <fieldset class="zones"><legend>Une douleur ? <span class="muted small">Les exercices concernés seront retirés 7 jours</span></legend>${zoneChips('zone')}</fieldset>
     <label>Note <textarea name="note" rows="2" placeholder="Charges, sensations…"></textarea></label>`;
 }
 
@@ -322,12 +474,17 @@ function submitLog(form) {
     feeling: fd.get('feeling'),
     completed: !fd.get('stopped'),
     maxGrade: fd.get('maxGrade') || null,
-    pain: !!fd.get('pain'),
+    zones: fd.getAll('zone'),
     note: fd.get('note') || '',
   };
+  log.pain = log.zones.length > 0;
   state.logs.push(log);
   state.logs.sort((a, b) => a.date.localeCompare(b.date));
   const msgs = adapt(state, log);
+  if (log.pain) {
+    addPains(state, log.zones, log.date);
+    msgs.push(`Douleur notée (${log.zones.map((z) => ZONES[z].toLowerCase()).join(', ')}) : les exercices concernés sont retirés pendant 7 jours.`);
+  }
   persist();
   render();
   toast(['Séance enregistrée 💪', ...msgs].join('<br>'), msgs.length ? 6000 : 2500);
@@ -429,7 +586,10 @@ function renderGuided() {
   return `<div class="guided" id="guided">
       <div class="g-top">
         <div><span class="g-caption">Temps restant</span><strong id="g-total" class="g-total"></strong></div>
-        <button class="icon-btn" data-g="quit" id="g-quit" aria-label="Quitter la séance">✕</button>
+        <span class="g-tools">
+          <button class="icon-btn" data-g="voice" id="g-voice" aria-label="Annonces vocales">${state.settings.voice ? '🔊' : '🔇'}</button>
+          <button class="icon-btn" data-g="quit" id="g-quit" aria-label="Quitter la séance">✕</button>
+        </span>
       </div>
       <div class="g-progress"><i id="g-bar"></i></div>
       <div class="g-main">
@@ -438,6 +598,12 @@ function renderGuided() {
         <div id="g-sub" class="g-sub"></div>
         <div id="g-time" class="g-time"></div>
         <div id="g-hint" class="g-hint"></div>
+        <div id="g-lift" class="g-lift" hidden>
+          <div class="stepper"><span class="g-caption">Répétitions</span>
+            <div><button data-lstep="reps:-1" aria-label="Une répétition de moins">−</button><input id="g-reps" type="number" inputmode="numeric" min="0" aria-label="Répétitions faites"><button data-lstep="reps:1" aria-label="Une répétition de plus">+</button></div></div>
+          <div class="stepper" id="g-kgwrap"><span class="g-caption">Charge (kg)</span>
+            <div><button data-lstep="kg:-1" aria-label="Moins lourd">−</button><input id="g-kg" type="number" inputmode="decimal" min="0" aria-label="Charge en kg"><button data-lstep="kg:1" aria-label="Plus lourd">+</button></div></div>
+        </div>
         <button class="link" id="g-info" data-info="">ⓘ Comment faire cet exercice</button>
       </div>
       <div class="g-next"><span class="g-caption">Ensuite</span><div id="g-next"></div></div>
@@ -473,7 +639,10 @@ function paintGuided() {
   const over = v.remaining < 0 && !st.countUp;
   $('#g-time').textContent = st.countUp ? fmt(st.dur * 1000 - v.remaining) : over ? `+${fmt(-v.remaining)}` : fmt(v.remaining);
   $('#g-time').classList.toggle('over', over);
-  $('#g-hint').textContent = st.countUp ? 'Effort maximal : appuie sur ✓ à la fin et retiens ton résultat.' : st.timed ? '' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
+  const lift = guidedLiftEx(st);
+  $('#g-hint').textContent = st.countUp ? 'Effort maximal : appuie sur ✓ à la fin et retiens ton résultat.' : st.timed ? ''
+    : lift ? 'Ajuste ce que tu as fait, puis appuie sur ✓.' : over ? 'Temps estimé dépassé : appuie sur ✓ quand c\'est fait.' : 'Temps estimé. Appuie sur ✓ quand la série est faite.';
+  paintLift(v);
   const info = st.info ? [].concat(st.info).join(',') : '';
   $('#g-info').hidden = !info;
   $('#g-info').dataset.info = info;
@@ -499,7 +668,8 @@ function renderStats() {
     </div>
     <section class="card"><h2>Séances par semaine</h2>${weeklyBars(logs)}</section>
     <section class="card"><h2>Ressenti</h2>${feelingDots(logs)}</section>
-    <section class="card"><h2>Progression en voie</h2>${gradeLine(logs)}</section>
+    <section class="card"><h2>Escalade</h2>${climbStats()}</section>
+    <section class="card"><h2>Carnet de charges</h2>${liftTable()}</section>
     <section class="card"><h2>Intensité du programme</h2>
       <p class="muted small">100 % = programme de base. L'appli ajuste selon ton ressenti.</p>
       <table class="table"><tbody>
@@ -509,10 +679,40 @@ function renderStats() {
     <section class="card"><h2>Historique</h2>
       ${logs.length ? `<table class="table"><thead><tr><th>Date</th><th>Séance</th><th>Ressenti</th><th></th></tr></thead><tbody>
         ${[...logs].reverse().map((l) => `<tr><td>${parseYmd(l.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</td>
-          <td><i class="dot" style="background:${TYPES[l.type].color}"></i>${esc(l.title)}${l.maxGrade ? ` · ${l.maxGrade}` : ''}${l.completed === false ? ' · arrêtée' : ''}${l.pain ? ' · douleur' : ''}${l.note ? `<br><span class="muted small">${esc(l.note)}</span>` : ''}</td>
+          <td><i class="dot" style="background:${TYPES[l.type].color}"></i>${esc(l.title)}${l.maxGrade ? ` · ${l.maxGrade}` : ''}${l.completed === false ? ' · arrêtée' : ''}${l.pain ? ` · douleur${l.zones?.length ? ` (${l.zones.map((z) => ZONES[z].toLowerCase()).join(', ')})` : ''}` : ''}${l.note ? `<br><span class="muted small">${esc(l.note)}</span>` : ''}</td>
           <td>${feelLabel(l.feeling)}</td><td><button class="link" data-del="${l.id}" aria-label="Supprimer">✕</button></td></tr>`).join('')}
       </tbody></table>` : '<p class="empty">Aucune séance notée pour l\'instant.</p>'}
     </section>`;
+}
+
+function climbStats() {
+  const climbs = state.climbs || [];
+  if (!climbs.length) return gradeLine(state.logs);
+  const since = new Date();
+  since.setDate(since.getDate() - 56);
+  const recent = climbs.filter((c) => sentClimb(c) && c.date >= ymd(since));
+  const max = (kind) => recent.filter((c) => c.kind === kind).reduce((m, c) => Math.max(m, GRADES.indexOf(c.grade)), -1);
+  const goal = GRADES.indexOf('7a');
+  const voie = max('voie');
+  const bloc = max('bloc');
+  const gap = voie < 0 ? '' : voie >= goal ? ' · objectif 7a atteint 🎉' : ` · encore ${goal - voie} cotation${goal - voie > 1 ? 's' : ''} avant le 7a`;
+  return `<p class="small">Sur 8 semaines : max en voie <strong>${voie < 0 ? '–' : GRADES[voie]}</strong>${gap}, en bloc <strong>${bloc < 0 ? '–' : GRADES[bloc]}</strong>.</p>
+    ${climbChart(climbs)}${climbPyramid(climbs)}`;
+}
+
+function liftTable() {
+  const list = Object.entries(state.lifts || {}).filter(([, l]) => l.length)
+    .sort((a, b) => b[1].at(-1).date.localeCompare(a[1].at(-1).date));
+  if (!list.length) return '<p class="empty">Note tes séries pendant la séance guidée, ou avec le bouton 📒 d\'un exercice.</p>';
+  const delta = (p) => {
+    if (!p || !p.delta) return p ? '=' : '';
+    const v = `${p.delta > 0 ? '+' : ''}${String(p.delta).replace('.', ',')} ${p.kind === 'kg' ? 'kg' : 'rép.'}`;
+    return p.delta > 0 ? `<span class="up">▲ ${v}</span>` : `<span class="down">▼ ${v}</span>`;
+  };
+  return `<div class="table-scroll"><table class="table lifts"><thead><tr><th>Exercice</th><th>Dernière fois</th><th class="num">Évol.</th></tr></thead><tbody>
+    ${list.map(([name, l]) => `<tr><td>${esc(name)}<br><span class="muted small">${l.length} séance${l.length > 1 ? 's' : ''}</span></td>
+      <td>${formatSets(l.at(-1))}<br><span class="muted small">${shortDate(l.at(-1).date)}</span></td><td class="num">${delta(liftProgress(l))}</td></tr>`).join('')}
+    </tbody></table></div>`;
 }
 
 function benchTable() {
@@ -554,6 +754,7 @@ function renderSettings() {
       <h2>Chrono</h2>
       <label class="row"><input type="checkbox" name="sound" ${s.sound ? 'checked' : ''}> Signal sonore</label>
       <label class="row"><input type="checkbox" name="vibrate" ${s.vibrate ? 'checked' : ''}> Vibration</label>
+      <label class="row"><input type="checkbox" name="voice" ${s.voice ? 'checked' : ''}> Annonces vocales pendant la séance guidée</label>
       <button class="primary">Enregistrer</button>
     </form>
     <section class="card stack">
@@ -597,10 +798,18 @@ document.addEventListener('click', async (e) => {
   if (d.benchEdit) { editBench = d.benchEdit; refOpen = true; return render(); }
   if (d.action === 'resume-guided') return go('guided');
   if (d.g === 'toggle') {
-    if (guided.running) { guided.pause(); releaseWake(); } else { guided.start(); requestWake(); }
+    if (guided.running) { guided.pause(); stopSpeaking(); releaseWake(); } else { guided.start(); requestWake(); }
     return;
   }
-  if (d.g === 'next') return guided.next();
+  if (d.g === 'next') { recordGuidedLift(); return guided.next(); }
+  if (d.lstep) { const [field, dir] = d.lstep.split(':'); return stepLift(field, Number(dir)); }
+  if (d.g === 'voice') {
+    state.settings.voice = !state.settings.voice;
+    save(state);
+    t.textContent = state.settings.voice ? '🔊' : '🔇';
+    if (!state.settings.voice) stopSpeaking();
+    return toast(state.settings.voice ? 'Annonces vocales activées.' : 'Annonces vocales coupées.', 1500);
+  }
   if (d.g === 'prev') return guided.prev();
   if (d.g === 'quit') {
     if (guided.done || t.dataset.confirm) return quitGuided();
@@ -628,6 +837,16 @@ document.addEventListener('click', async (e) => {
     state.express ||= {};
     if (state.express[d.express]) delete state.express[d.express]; else state.express[d.express] = true;
     delete state.checks[d.express];
+    persist(); return render();
+  }
+  if (d.lift) { const [id, i] = d.lift.split('|'); return openLiftSheet(id, Number(i)); }
+  if (d.heal) {
+    healPain(state, d.heal, ymd(new Date()));
+    persist(); render();
+    return toast(`${ZONES[d.heal]} : exercices de nouveau proposés. Reprends en douceur.`);
+  }
+  if (d.climbDel) {
+    state.climbs = (state.climbs || []).filter((c) => c.id !== d.climbDel);
     persist(); return render();
   }
   if (d.week) { weekOffset += Number(d.week); return render(); }
@@ -696,6 +915,39 @@ document.addEventListener('submit', (e) => {
   const fd = new FormData(f);
   const kind = f.dataset.form;
   if (kind === 'log' || kind === 'extra') return submitLog(f);
+  if (kind === 'lift') {
+    const s = findSession(f.dataset.id);
+    const i = Number(f.dataset.ex);
+    const e = s.exercises[i];
+    const kg = e.load && fd.get('kg') !== '' ? Number(fd.get('kg')) : null;
+    const done = Array.from({ length: e.sets }, (_, k) => Number(fd.get(`reps${k}`))).filter((r) => r > 0).map((reps) => ({ reps, kg }));
+    saveLift(state, e.lift.key, s.date, done);
+    if (done.length) {
+      const list = new Set(state.checks[f.dataset.id] || []);
+      list.add(i);
+      state.checks[f.dataset.id] = [...list];
+    }
+    $('#sheet').hidden = true;
+    persist(); render();
+    if (!done.length) return toast('Séries effacées.');
+    const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done });
+    return toast(`Séries enregistrées 📒<br>Prochaine fois : ${targetText(next)}${next.reason ? ` (${esc(next.reason)})` : ''}`, 5000);
+  }
+  if (kind === 'pain') {
+    const zones = fd.getAll('zone');
+    if (!zones.length) return toast('Choisis au moins une zone.');
+    addPains(state, zones, f.dataset.date);
+    painOpen = false;
+    persist(); render();
+    return toast(`Séances adaptées pour 7 jours (${zones.map((z) => ZONES[z].toLowerCase()).join(', ')}). Reprends dès que ça va mieux.`, 5000);
+  }
+  if (kind === 'climb') {
+    const climb = { id: `${Date.now()}`, date: f.dataset.date, kind: fd.get('kind'), grade: fd.get('grade'), style: fd.get('style') };
+    state.climbs = [...(state.climbs || []), climb];
+    lastClimb = { kind: climb.kind, grade: climb.grade, open: climb.date };
+    persist(); render();
+    return toast(`${climb.kind === 'voie' ? 'Voie' : 'Bloc'} ${climb.grade} noté${climb.kind === 'voie' ? 'e' : ''} (${CLIMB_STYLES[climb.style].toLowerCase()}).`, 2000);
+  }
   if (kind === 'bench') {
     const entry = { date: f.dataset.date };
     BENCH_TESTS.forEach(({ key }) => { const v = Number(fd.get(key)); if (v > 0) entry[key] = v; });
@@ -725,6 +977,7 @@ document.addEventListener('submit', (e) => {
     s.access = { escalade: !!fd.get('accessEscalade'), muscu: !!fd.get('accessMuscu') };
     s.sound = !!fd.get('sound');
     s.vibrate = !!fd.get('vibrate');
+    s.voice = !!fd.get('voice');
     persist(); render(); toast('Réglages enregistrés.');
   }
 });

@@ -7,7 +7,9 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - `index.html`, `css/styles.css` : coquille et styles (thème clair/sombre via variables CSS).
 - `js/program.js` : modèles de séances, répartition 3/4/5 séances, cycle de 4 semaines (reprise, construction, intensification, décharge), règles d'adaptation. Logique pure, testée.
 - `js/timer.js` : chrono, minuteur, intervalles (calcul par horodatage), son et vibration.
-- `js/guided.js` : séance guidée (`buildSteps` transforme une séance en étapes, `GuidedRunner` les enchaîne).
+- `js/guided.js` : séance guidée (`buildSteps` transforme une séance en étapes avec la phrase annoncée `say`, `GuidedRunner` les enchaîne).
+- `js/voice.js` : annonces vocales (synthèse vocale du téléphone, `settings.voice`).
+- `js/lifts.js` : carnet de charges (`state.lifts`, double progression, `liftPlan` appelé par `buildSession`).
 - `js/guides.js` : fiches tuto des exercices (consignes, erreurs, recherche vidéo YouTube). Chaque `info` d'exercice doit pointer vers une fiche existante.
 - `js/app.js` : rendu des vues et événements (délégation par `data-*`).
 - `js/charts.js` : graphiques SVG faits main. `js/calendar.js` : liens Google Agenda et export .ics.
@@ -22,6 +24,9 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Prise de référence (`reference`, `state.benchmarks`) : tests maximaux toutes les 4 semaines. `prescriptions(latestBench(state))` en déduit répétitions, charges (gilet, pince) et allures de course (VMA du test de Cooper), passées aux modèles via `ctx.p`.
 - Précautions santé d'Hugo : pas de poutre avant la semaine 5, mobilité nuque et dos à chaque séance d'escalade, éviter l'escalade deux jours de suite.
 - Les exercices sont structurés (`sets`, `reps`, `work`, `timed`, `rest`, `inner`, `circuit`, `restAfter`, voir l'en-tête des modèles dans `program.js`) : le texte, le chrono ⏱, la durée totale et la séance guidée en sont déduits. Ne pas écrire les repos en dur dans les notes.
+- Carnet de charges : les exercices comptés des séances maison et muscu ont un `lift` (objectif suivant). Les charges sont décrites par `load` (`DB`, `VEST`, `GRIP`, `GYM`) et ne dépassent jamais le matériel. Le gilet et la pince sont recalés par une nouvelle prise de référence. Pas de progression en semaine de décharge.
+- Douleurs (`state.pains`) : une zone signalée retire pendant 7 jours les exercices dont la fiche la sollicite (`STRAIN` dans `program.js`, à compléter pour toute nouvelle fiche qui charge une articulation).
+- Carnet d'escalade (`state.climbs`) : voies et blocs notés en salle, cotation max préremplie dans le ressenti.
 - Ajouter un test dans `tests/program.test.js` pour toute règle de programme ou d'adaptation.
 
 ## Commandes

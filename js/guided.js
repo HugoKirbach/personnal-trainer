@@ -1,10 +1,18 @@
 // Séance guidée : un seul chrono qui enchaîne décompte, séries, repos et
 // exercices suivants. Les étapes chronométrées passent seules ; les séries
 // comptées (répétitions) affichent un temps estimé et attendent « Fait ».
+// Chaque étape porte aussi la phrase annoncée à voix haute (say).
 import { fmtDuration } from './program.js';
 import { signal, unlockAudio } from './timer.js';
 
 export const PREP_SECONDS = 10;
+// En dessous, une étape n'est pas annoncée : les bips suffisent (intervalles de poutre…).
+const SAY_MIN_SECONDS = 15;
+const target = (e) => {
+  const t = e.lift?.target;
+  if (!t) return e.reps ? `${e.reps}.` : '';
+  return `Objectif : ${t.reps} répétitions${t.kg != null ? ` à ${String(t.kg).replace('.', ',')} kg` : ''}.`;
+};
 
 export function buildSteps(session) {
   const steps = [];
@@ -15,31 +23,44 @@ export function buildSteps(session) {
         ? `${e.setLabels[s - 1]} · ${s}/${e.sets}`
         : e.sets > 1 ? `${e.circuit ? 'Tour' : 'Série'} ${s}/${e.sets}` : '';
       if (e.circuit) {
-        e.circuit.forEach((c) => steps.push({
+        e.circuit.forEach((c, k) => steps.push({
           kind: 'work', title: c.name, sub: [setTag, c.label].filter(Boolean).join(' · '), dur: c.work, timed: !!c.timed, ex: i, info: c.info || e.info,
+          say: `${k === 0 && setTag ? `${setTag}. ` : ''}${c.name}.${c.label && c.label !== c.name ? ` ${c.label}.` : ''}`,
         }));
       } else if (e.inner) {
         for (let r = 1; r <= e.inner.rounds; r++) {
           const named = e.innerLabels?.[r - 1];
+          let say = null;
+          if (named) say = `${named}.`;
+          else if (r === 1) say = `${e.label || e.name}.${setTag ? ` ${setTag}.` : ''} ${e.inner.rounds} fois ${fmtDuration(e.inner.work)}.`;
+          else if (e.inner.work >= SAY_MIN_SECONDS) say = `${r}/${e.inner.rounds}.`;
           steps.push({
-            kind: 'work', title: named || e.name, sub: [named ? e.name : '', setTag, `${r}/${e.inner.rounds}`].filter(Boolean).join(' · '), dur: e.inner.work, timed: true, ex: i, info: e.info,
+            kind: 'work', title: named || e.name, sub: [named ? e.name : '', setTag, `${r}/${e.inner.rounds}`].filter(Boolean).join(' · '), dur: e.inner.work, timed: true, ex: i, info: e.info, say,
           });
-          if (r < e.inner.rounds && e.inner.rest) steps.push({ kind: 'rest', title: 'Repos', sub: e.name, dur: e.inner.rest, timed: true, ex: i });
+          if (r < e.inner.rounds && e.inner.rest) steps.push({ kind: 'rest', title: 'Repos', sub: e.name, dur: e.inner.rest, timed: true, ex: i, say: null });
         }
       } else {
+        const how = e.countUp ? 'Effort maximal.' : e.setLabels ? '' : e.timed ? `${fmtDuration(e.work)}.` : target(e);
         steps.push({
-          kind: 'work', title: e.name, sub: [setTag, e.setLabels ? '' : e.reps].filter(Boolean).join(' · '), dur: e.work, timed: !!e.timed, countUp: !!e.countUp, ex: i, info: e.info,
+          kind: 'work', title: e.name, sub: [setTag, e.setLabels ? '' : e.reps].filter(Boolean).join(' · '), dur: e.work, timed: !!e.timed, countUp: !!e.countUp, ex: i, set: s - 1, info: e.info,
+          say: `${e.name}.${setTag ? ` ${setTag}.` : ''} ${how}`.trim(),
         });
       }
       if (s < e.sets && e.rest) {
-        steps.push({ kind: 'rest', title: 'Repos', sub: `${e.name} · avant ${e.circuit ? 'le tour' : 'la série'} ${s + 1}/${e.sets}`, dur: e.rest, timed: true, ex: i });
+        steps.push({
+          kind: 'rest', title: 'Repos', sub: `${e.name} · avant ${e.circuit ? 'le tour' : 'la série'} ${s + 1}/${e.sets}`, dur: e.rest, timed: true, ex: i,
+          say: e.rest >= SAY_MIN_SECONDS ? `Repos, ${fmtDuration(e.rest)}.` : null,
+        });
       }
     }
     if (i < exs.length - 1 && e.restAfter) {
-      steps.push({ kind: 'rest', title: 'Repos', sub: `Prochain exercice : ${exs[i + 1].name}`, dur: e.restAfter, timed: true, ex: i, transition: true });
+      steps.push({
+        kind: 'rest', title: 'Repos', sub: `Prochain exercice : ${exs[i + 1].name}`, dur: e.restAfter, timed: true, ex: i, transition: true,
+        say: `Repos, ${fmtDuration(e.restAfter)}. Prochain exercice : ${exs[i + 1].name}.`,
+      });
     }
   });
-  steps.unshift({ kind: 'prep', title: exs[0].name, sub: exs[0].detail, dur: PREP_SECONDS, timed: true, ex: 0, info: exs[0].info });
+  steps.unshift({ kind: 'prep', title: exs[0].name, sub: exs[0].detail, dur: PREP_SECONDS, timed: true, ex: 0, info: exs[0].info, say: `Prépare-toi. Premier exercice : ${exs[0].name}.` });
   return steps;
 }
 
@@ -57,7 +78,7 @@ export class GuidedRunner {
     this.session = session;
     this.steps = buildSteps(session);
     this.onTick = onTick;
-    this.opts = opts; // { sound, vibrate, onExerciseDone(i), onFinish() }
+    this.opts = opts; // { sound, vibrate, onExerciseDone(i), onFinish(), onSpeak(text)? }
     this.lastWork = {};
     this.steps.forEach((s, i) => { if (s.kind === 'work') this.lastWork[s.ex] = i; });
     this.totalMs = this.steps.reduce((t, s) => t + s.dur * 1000, 0);
@@ -77,9 +98,16 @@ export class GuidedRunner {
   start() {
     if (this.running || this.done) return;
     unlockAudio();
+    const first = this.index === 0 && this.elapsedBefore === 0;
     this.startedAt = Date.now();
     this.loop = setInterval(() => this.tick(), 200);
+    if (first) this.announce();
     this.tick();
+  }
+
+  announce() {
+    const say = this.steps[this.index].say;
+    if (say) this.opts.onSpeak?.(say);
   }
 
   pause() {
@@ -104,6 +132,7 @@ export class GuidedRunner {
     if (this.running) this.startedAt = Date.now();
     this.lastCount = null;
     this.overtimeSignaled = false;
+    this.cued = false;
   }
 
   next() {
@@ -118,6 +147,7 @@ export class GuidedRunner {
     if (this.done) return;
     if (this.stepElapsed() > 3000 || this.index === 0) this.enter(this.index);
     else this.enter(this.index - 1);
+    this.announce();
     this.tick();
   }
 
@@ -126,6 +156,7 @@ export class GuidedRunner {
     this.done = true;
     this.stop();
     signal('end', this.opts);
+    this.opts.onSpeak?.('Séance terminée. Bravo !');
     this.opts.onFinish();
     this.tick();
   }
@@ -133,6 +164,7 @@ export class GuidedRunner {
   signalStep() {
     const k = this.steps[this.index].kind;
     if (k !== 'prep') signal(k === 'work' ? 'work' : 'rest', this.opts);
+    this.announce();
   }
 
   remainingMs() {
@@ -163,6 +195,11 @@ export class GuidedRunner {
     if (this.running && st.timed && sec >= 1 && sec <= 3 && this.lastCount !== sec) {
       this.lastCount = sec;
       signal('count', this.opts);
+    }
+    // Annonce « 10 secondes » à la fin des repos assez longs.
+    if (this.running && st.kind === 'rest' && st.dur >= 30 && remaining <= 10000 && remaining > 8000 && !this.cued) {
+      this.cued = true;
+      this.opts.onSpeak?.('Plus que 10 secondes.');
     }
     if (this.running && !st.timed && !st.countUp && remaining <= 0 && !this.overtimeSignaled) {
       this.overtimeSignaled = true;
