@@ -53,7 +53,7 @@ test('recettes : 20 plats et 10 collations', () => {
   assert.equal(RECIPES.filter((r) => r.meal === 'collation').length, 10);
 });
 
-test('recettes : complètes, matériel d\'Hugo, ni tomate crue ni chèvre', () => {
+test('recettes : complètes, matériel d\'Hugo, ni tomate crue, ni chèvre, ni coriandre', () => {
   const ids = new Set();
   for (const r of RECIPES) {
     assert.ok(!ids.has(r.id), `id unique : ${r.id}`);
@@ -68,9 +68,11 @@ test('recettes : complètes, matériel d\'Hugo, ni tomate crue ni chèvre', () =
     for (const i of r.ingredients) {
       assert.ok(AISLES[i.aisle], `${r.id} : rayon de ${i.name}`);
       assert.ok(!/ch[èe]vre/i.test(i.name), `${r.id} : pas de chèvre`);
+      assert.ok(!/coriandre/i.test(i.name), `${r.id} : pas de coriandre`);
       assert.ok(!/tomate/i.test(i.name) || /concass|coulis|concentr|pel[ée]es|s[ée]ch[ée]es|passata/i.test(i.name), `${r.id} : tomate cuite seulement (${i.name})`);
     }
     r.steps.forEach((st) => assert.ok(stepText(st).length > 10, `${r.id} : étape`));
+    assert.ok(!/coriandre/i.test(r.steps.map(stepText).join(' ') + r.tip), `${r.id} : pas de coriandre dans la recette`);
   }
 });
 
