@@ -440,7 +440,7 @@ function sessionCard(s) {
     <p class="total">⏱ <strong>${s.duration}</strong> au total, repos compris</p>
     ${s.reference ? '<p class="muted small">Fais les tests reposé, dans l\'ordre, avec les repos indiqués. Note chaque résultat en bas.</p>' : `<p class="muted small">Semaine ${s.week} · ${s.phase.name} : ${s.phase.note}</p>`}
     ${s.notes.map((n) => `<p class="small note">ℹ️ ${esc(n)}</p>`).join('')}
-    ${s.reference ? '' : `<p class="tip">💡 ${esc(tipFor(s.type, parseYmd(s.date).getTime()))}</p>`}
+    ${s.reference ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
     ${log || s.reference || s.bonus ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
     <ol class="exercises">
@@ -492,7 +492,7 @@ function feedbackFields(id, free, type, hasRun, maxGrade = null) {
   return `<div class="seg" role="radiogroup" aria-label="Ressenti">
       ${['facile', 'ok', 'dur'].map((f) => `<label><input type="radio" name="feeling" value="${f}" required><span>${feelLabel(f)}</span></label>`).join('')}
     </div>
-    ${free || hasRun ? `<label class="row"><input type="checkbox" name="stopped"> J'ai arrêté ${free ? 'la séance' : 'la course'} avant la fin</label>` : ''}
+    ${free || hasRun ? `<label class="row"><input type="checkbox" name="stopped"> J'ai arrêté ${free ? 'la séance' : state.settings.access.course === false ? 'le cardio' : 'la course'} avant la fin</label>` : ''}
     ${free || type === 'escalade' ? `<label>Cotation max enchaînée (escalade) <select name="maxGrade"><option value="">—</option>${GRADES.map((g) => `<option ${g === maxGrade ? 'selected' : ''}>${g}</option>`).join('')}</select></label>` : ''}
     <fieldset class="zones"><legend>Une douleur ? <span class="muted small">Les exercices concernés seront retirés 7 jours</span></legend>${zoneChips('zone')}</fieldset>
     <label>Note <textarea name="note" rows="2" placeholder="Charges, sensations…"></textarea></label>`;
@@ -797,9 +797,10 @@ function renderSettings() {
         <label>Week-end <input type="time" name="weekend" value="${s.times.weekend}"></label>
       </div>
       <h2>Mes accès</h2>
-      <p class="small muted">Sans abonnement, les séances sont remplacées par des versions à la maison (barre de traction, haltères, gilet lesté, pompes).</p>
+      <p class="small muted">Sans abonnement, les séances sont remplacées par des versions à la maison (barre de traction, haltère, gilet lesté, pompes). Sans course, le cardio passe sur vélo ou rameur en salle, ou en circuit à la maison.</p>
       <label class="row"><input type="checkbox" name="accessEscalade" ${s.access.escalade ? 'checked' : ''}> Salle d'escalade</label>
       <label class="row"><input type="checkbox" name="accessMuscu" ${s.access.muscu ? 'checked' : ''}> Salle de muscu</label>
+      <label class="row"><input type="checkbox" name="accessCourse" ${s.access.course !== false ? 'checked' : ''}> Je peux courir</label>
       <h2>Chrono</h2>
       <label class="row"><input type="checkbox" name="sound" ${s.sound ? 'checked' : ''}> Signal sonore</label>
       <label class="row"><input type="checkbox" name="vibrate" ${s.vibrate ? 'checked' : ''}> Vibration</label>
@@ -1166,7 +1167,7 @@ document.addEventListener('submit', (e) => {
     const start = fd.get('startDate');
     if (start) s.startDate = ymd(mondayOf(parseYmd(start)));
     s.times = { midi: fd.get('midi'), soir: fd.get('soir'), weekend: fd.get('weekend') };
-    s.access = { escalade: !!fd.get('accessEscalade'), muscu: !!fd.get('accessMuscu') };
+    s.access = { escalade: !!fd.get('accessEscalade'), muscu: !!fd.get('accessMuscu'), course: !!fd.get('accessCourse') };
     s.sound = !!fd.get('sound');
     s.vibrate = !!fd.get('vibrate');
     s.voice = !!fd.get('voice');

@@ -15,7 +15,7 @@ export function defaults() {
       voice: true,
       notifications: false,
       reminderMinutes: 30,
-      access: { escalade: false, muscu: false },
+      access: { escalade: false, muscu: false, course: true },
     },
     adapt: { escalade: 1, muscu: 1, cardio: 1, gradeIdx: 3 },
     logs: [],

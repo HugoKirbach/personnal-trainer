@@ -359,3 +359,43 @@ test('un résultat de test saisi en séance complète la prise de référence du
   assert.equal(st.benchmarks.length, 2);
   assert.equal(latestBench(st).pullups, 8);
 });
+
+// ---------- Course décochée ----------
+const noRun = (muscu) => ({ ...baseState(), settings: { ...baseState().settings, access: { escalade: false, muscu, course: false } } });
+const RUN_INFO = ['course-endurance', 'fractionne-30-30', 'test-cooper'];
+
+test('sans course, aucune séance ne fait courir', () => {
+  for (const muscu of [false, true]) {
+    for (const n of [3, 4, 5]) {
+      const st = noRun(muscu);
+      st.settings.sessionsPerWeek = n;
+      for (const express of [false, true]) {
+        if (express) st.express = Object.fromEntries(weekSessions(parseYmd('2026-11-09'), st).map((s) => [`${s.date}#${s.index}`, true]));
+        weekSessions(parseYmd('2026-11-09'), st).forEach((s) => {
+          s.exercises.forEach((e) => assert.ok(![].concat(e.info).some((i) => RUN_INFO.includes(i)), `${s.variant} : ${e.name}`));
+          assert.ok(!/course/i.test(s.title), s.title);
+        });
+      }
+    }
+    assert.ok(!referenceSession(parseYmd('2026-11-09'), noRun(muscu)).exercises.some((e) => e.test === 'cooper'));
+  }
+});
+
+test('sans course : vélo ou rameur en salle, circuit cardio à la maison', () => {
+  assert.equal(resolveKey('fractionne', noRun(true)), 'fractionneVelo');
+  assert.equal(resolveKey('fractionne', noRun(false)), 'cardioMaison');
+  assert.equal(resolveKey('fractionne', baseState()), 'fractionne');
+  const bas = buildSession('bas', parseYmd('2026-11-11'), noRun(true));
+  assert.ok(bas.exercises.some((e) => e.info === 'cardio-machine'));
+  const home = buildSession('basMaison', parseYmd('2026-11-11'), noRun(false));
+  const cardio = home.exercises.at(-1);
+  assert.equal(cardio.innerLabels.length, cardio.inner.rounds);
+  assert.equal(home.title, 'Bas du corps à la maison et cardio');
+});
+
+test('la version express sans course dure entre 20 et 30 minutes', () => {
+  const s = buildSession('fractionne', parseYmd('2026-10-28'), noRun(false), true);
+  assert.equal(s.variant, 'expressCardio');
+  const min = Number(s.duration.match(/\d+/)[0]);
+  assert.ok(min >= 20 && min <= 30, s.duration);
+});

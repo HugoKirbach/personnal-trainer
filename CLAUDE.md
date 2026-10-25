@@ -22,6 +22,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 
 - Aucune dépendance ni étape de build : modules ES servis tels quels. Garder ça.
 - Accès salle (`settings.access`) : sans abonnement, `resolveKey` remplace les séances par leurs versions maison (`*Maison`). Le mode express (`state.express`) remplace une séance par une version de 20 à 30 min à la maison. Pas de dips à la maison.
+- Course (`settings.access.course`, cochée par défaut) : décochée, aucune séance ne fait courir. Le fractionné devient `fractionneVelo` (salle) ou `cardioMaison`, l'express `expressCardio`, la course des séances muscu passe sur vélo/rameur ou en circuit cardio (`ctx.run`), et le test de Cooper disparaît de la référence.
 - Matériel maison : un seul haltère réglable de 2 à 10 kg, gilet lesté de 4 à 8 kg, pince de préhension de 5 à 60 kg, barre de traction. Exercices maison à un bras, jamais « des haltères ».
 - Prise de référence (`reference`, `state.benchmarks`) : tests maximaux toutes les 4 semaines. `prescriptions(latestBench(state))` en déduit répétitions, charges (gilet, pince) et allures de course (VMA du test de Cooper), passées aux modèles via `ctx.p`.
 - Précautions santé d'Hugo : pas de poutre avant la semaine 5, mobilité nuque et dos à chaque séance d'escalade, éviter l'escalade deux jours de suite.

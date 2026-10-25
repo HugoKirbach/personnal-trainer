@@ -6,7 +6,7 @@ export const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'
 export const TYPES = {
   escalade: { label: 'Escalade', color: 'var(--series-1)' },
   muscu: { label: 'Muscu', color: 'var(--series-2)' },
-  cardio: { label: 'Course', color: 'var(--series-3)' },
+  cardio: { label: 'Cardio', color: 'var(--series-3)' },
 };
 
 // Cycle de 4 semaines. Le premier cycle est une reprise plus douce.
@@ -62,6 +62,12 @@ export const TIPS = {
     'Sur le fractionné, la dernière répétition doit ressembler à la première.',
     'Augmente le volume de course de 10 % maximum par semaine.',
     'Hydrate-toi avant de partir, surtout le midi.',
+  ],
+  cardioSansCourse: [
+    'Cardio sans course : vise un effort où tu peux encore parler par phrases courtes.',
+    'Atterris en douceur sur l\'avant du pied pendant les sauts, genoux souples.',
+    'Sur les intervalles, la dernière série doit ressembler à la première.',
+    'Hydrate-toi avant la séance, surtout le midi.',
   ],
   general: [
     'Bois régulièrement dans la journée, pas seulement pendant la séance.',
@@ -168,9 +174,12 @@ export function sessionsOn(date, state) {
 // Choisit la variante réelle d'une séance selon les accès en salle et le mode express.
 export function resolveKey(key, state, express = false) {
   const type = TEMPLATES[key].type;
-  if (express) return { escalade: 'expressGrimpe', muscu: 'expressRenfo', cardio: 'expressCourse' }[type];
-  if (TEMPLATES[key].home) return key;
   const access = state.settings.access || {};
+  const runs = access.course !== false;
+  if (express) return { escalade: 'expressGrimpe', muscu: 'expressRenfo', cardio: runs ? 'expressCourse' : 'expressCardio' }[type];
+  if (TEMPLATES[key].home) return key;
+  // Pas de course : fractionné sur vélo ou rameur en salle, sinon circuit cardio à la maison.
+  if (type === 'cardio' && !runs) return access.muscu ? 'fractionneVelo' : 'cardioMaison';
   if (type === 'escalade' && !access.escalade) return key === 'bloc' ? 'blocMaison' : 'voieMaison';
   if (type === 'muscu' && !access.muscu) return `${key}Maison`;
   return key;
@@ -240,6 +249,7 @@ const STRAIN = {
   'goblet-squat': ['genou', 'dos'], presse: ['genou'], 'souleve-roumain': ['dos'], 'souleve-roumain-unilateral': ['dos'],
   'fentes-marchees': ['genou'], 'fentes-bulgares': ['genou'], hollow: ['dos', 'nuque'], superman: ['dos', 'nuque'],
   'course-endurance': ['genou'], 'fractionne-30-30': ['genou'], 'test-cooper': ['genou'],
+  'jumping-jacks': ['genou'], burpees: ['genou', 'poignet', 'epaule'], 'shadow-boxing': ['epaule'],
   'crunch-inverse': ['dos'], 'russian-twist': ['dos'], 'mountain-climbers': ['poignet', 'epaule'], 'crunch-poulie': ['dos', 'nuque'],
   'chaise-romaine': ['dos'], 'bucheron-poulie': ['dos', 'epaule'], 'roue-abdos': ['dos', 'epaule'], 'extensions-lombaires': ['dos'],
 };
@@ -299,7 +309,8 @@ export function buildSession(key, date, state, express = false) {
   const f = info.mult * (a[type] ?? 1);
   const bench = latestBench(state);
   const p = prescriptions(bench);
-  const ctx = { f, info, p, g: a.gradeIdx, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
+  const runs = state.settings.access?.course !== false;
+  const ctx = { f, info, p, g: a.gradeIdx, run: runs, sets: (n) => clamp(Math.round(n * f), 1, n + 2) };
   const raw = t.build(ctx).filter(Boolean);
   const notes = raw.filter((e) => e.kind === 'note').map((e) => e.text);
   let items = raw.filter((e) => e.kind !== 'note');
@@ -331,7 +342,7 @@ export function buildSession(key, date, state, express = false) {
   const totalSeconds = sessionSeconds(exercises);
   return {
     key, variant, type, express, home: !!t.home, run: !!t.run, reference: !!t.reference, bonus: !!t.bonus, notes,
-    title: t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
+    title: typeof t.title === 'function' ? t.title(ctx) : t.title, duration: durationLabel(totalSeconds), totalSeconds, phase: info.phase, week: info.week, exercises,
   };
 }
 
@@ -398,6 +409,26 @@ export function prescriptions(b = {}) {
     fastPace: vma ? `${pace(vma)} min/km, soit ${vma.toLocaleString('fr-FR')} km/h` : null,
   };
 }
+
+// Cardio quand la course est décochée : 5 mouvements en boucle, chaque intervalle porte son nom.
+const CARDIO_MOVES = [
+  { name: 'Jumping jacks', info: 'jumping-jacks' },
+  { name: 'Shadow boxing', info: 'shadow-boxing' },
+  { name: 'Mountain climbers', info: 'mountain-climbers' },
+  { name: 'Fentes alternées', info: 'fentes-marchees' },
+  { name: 'Burpees sans saut', info: 'burpees' },
+];
+const CARDIO_INFO = CARDIO_MOVES.map((m) => m.info);
+const moves = (rounds) => Array.from({ length: rounds }, (_, i) => CARDIO_MOVES[i % CARDIO_MOVES.length].name);
+// Cardio continu à la maison : intervalles 40/20, une minute par mouvement.
+const homeCardio = (min) => {
+  const rounds = Math.max(5, min);
+  return {
+    name: 'Cardio sans course', info: CARDIO_INFO, label: 'Cardio', inner: { work: 40, rest: 20, rounds }, innerLabels: moves(rounds),
+    note: 'Les 5 mouvements en boucle, à un rythme où tu peux encore parler par phrases courtes.',
+  };
+};
+const gymCardio = (min) => ({ name: 'Vélo, rameur ou elliptique', info: 'cardio-machine', work: min * 60, timed: true, note: 'En endurance : tu dois pouvoir parler.' });
 
 const easyRun = (p) => (p.easyPace ? `En endurance, vers ${p.easyPace}.` : 'En endurance, en aisance respiratoire.');
 const fastRun = (p) => (p.fastPace ? `Effort vers ${p.fastPace} (ta VMA), trot pendant les repos.` : 'Vite sur l\'effort, trot pendant les repos.');
@@ -479,20 +510,20 @@ const TEMPLATES = {
     ],
   },
   bas: {
-    type: 'muscu', title: 'Muscu bas du corps et course', restAfter: 90, run: true,
-    build: ({ f, sets, p }) => [
+    type: 'muscu', title: ({ run }) => `Muscu bas du corps et ${run ? 'course' : 'cardio'}`, restAfter: 90, run: true,
+    build: ({ f, sets, p, run }) => [
       WARMUP_GYM(300, '5 min de vélo, squats au poids du corps, mobilité hanches et dos.'),
       { name: 'Presse à cuisses ou goblet squat', info: ['presse', 'goblet-squat'], sets: sets(3), reps: '8 à 12', load: GYM(5), work: 45, rest: 120 },
       { name: 'Soulevé de terre roumain haltères', info: 'souleve-roumain', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 45, rest: 120, note: 'Dos neutre, charge modérée.' },
       { name: 'Fentes marchées', info: 'fentes-marchees', sets: sets(3), reps: '10 par jambe', load: GYM(2), work: 70, rest: 90 },
       { name: 'Hip thrust machine', info: 'hip-thrust', sets: sets(3), reps: '10 à 15', load: GYM(5), work: 45, rest: 90 },
       SIDE_PLANK_CIRCUIT(sets(3)),
-      { name: 'Course sur tapis', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: easyRun(p) },
+      run ? { name: 'Course sur tapis', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: easyRun(p) } : gymCardio(minutes(20, f)),
     ],
   },
   full: {
-    type: 'muscu', title: 'Muscu corps complet et course', restAfter: 90, run: true,
-    build: ({ f, sets, p }) => [
+    type: 'muscu', title: ({ run }) => `Muscu corps complet et ${run ? 'course' : 'cardio'}`, restAfter: 90, run: true,
+    build: ({ f, sets, p, run }) => [
       WARMUP_GYM(300, '5 min de rameur, mobilité nuque, épaules et hanches.'),
       { name: 'Goblet squat ou presse', info: ['goblet-squat', 'presse'], sets: sets(3), reps: '8 à 12', load: GYM(5), work: 45, rest: 120 },
       { name: 'Développé couché haltères', info: 'developpe-couche-halteres', sets: sets(3), reps: '8 à 12', load: GYM(2), work: 40, rest: 90 },
@@ -506,7 +537,7 @@ const TEMPLATES = {
         ],
       },
       PLANK(sets(3), p.plank),
-      { name: 'Course sur tapis', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: easyRun(p) },
+      run ? { name: 'Course sur tapis', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: easyRun(p) } : gymCardio(minutes(15, f)),
     ],
   },
   fractionne: {
@@ -584,8 +615,8 @@ const TEMPLATES = {
     ],
   },
   basMaison: {
-    type: 'muscu', title: 'Bas du corps à la maison et course', home: true, run: true, restAfter: 90,
-    build: ({ f, sets, p }) => [
+    type: 'muscu', title: ({ run }) => `Bas du corps à la maison et ${run ? 'course' : 'cardio'}`, home: true, run: true, restAfter: 90,
+    build: ({ f, sets, p, run }) => [
       WARMUP_GYM(300, 'Squats au poids du corps, fentes, mobilité des hanches et du dos.'),
       { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(4), reps: `${p.squatReps}`, work: 60, rest: 90, note: 'Haltère 10 kg et gilet 8 kg, descente en 3 secondes pour compenser la charge légère.' },
       { name: 'Fentes bulgares', info: 'fentes-bulgares', sets: sets(3), reps: '10 par jambe', work: 90, rest: 90, note: 'Pied arrière sur une chaise, gilet 8 kg.' },
@@ -593,12 +624,12 @@ const TEMPLATES = {
       { name: 'Hip thrust au sol lesté', info: 'hip-thrust', sets: sets(3), reps: '15', work: 45, rest: 60, note: 'Gilet 8 kg et haltère 10 kg sur les hanches.', restAfter: 60 },
       { name: 'Mollets sur une marche', info: 'mollets', sets: sets(3), reps: '20', work: 45, rest: 45, note: 'Sur une jambe si c\'est trop facile.', restAfter: 60 },
       SIDE_PLANK_CIRCUIT(sets(3)),
-      { name: 'Course dehors', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: easyRun(p) },
+      run ? { name: 'Course dehors', info: 'course-endurance', work: minutes(20, f) * 60, timed: true, note: easyRun(p) } : homeCardio(minutes(20, f)),
     ],
   },
   fullMaison: {
-    type: 'muscu', title: 'Corps complet à la maison et course', home: true, run: true, restAfter: 90,
-    build: ({ f, sets, p }) => [
+    type: 'muscu', title: ({ run }) => `Corps complet à la maison et ${run ? 'course' : 'cardio'}`, home: true, run: true, restAfter: 90,
+    build: ({ f, sets, p, run }) => [
       WARMUP_GYM(300, 'Jumping jacks, mobilité nuque, épaules et hanches.'),
       { name: 'Goblet squat lesté', info: 'goblet-squat', sets: sets(3), reps: `${p.squatReps}`, work: 60, rest: 90, note: 'Haltère 10 kg et gilet 8 kg.' },
       { name: 'Pompes', info: 'pompes', sets: sets(3), reps: p.pushReps, work: 40, rest: 75 },
@@ -607,7 +638,7 @@ const TEMPLATES = {
       { name: 'Développé épaules un bras', info: 'developpe-epaules', sets: sets(3), reps: '8 à 12 par bras', load: DB(6), work: 70, rest: 60 },
       { name: 'Oiseau un bras', info: 'oiseau', sets: sets(3), reps: '12 à 15 par bras', load: DB(3), work: 70, rest: 45, restAfter: 60 },
       PLANK(sets(3), p.plank),
-      { name: 'Course dehors', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: easyRun(p) },
+      run ? { name: 'Course dehors', info: 'course-endurance', work: minutes(15, f) * 60, timed: true, note: easyRun(p) } : homeCardio(minutes(15, f)),
     ],
   },
 
@@ -652,6 +683,36 @@ const TEMPLATES = {
       { name: 'Footing d\'échauffement', info: 'course-endurance', work: 420, timed: true, note: 'Très facile.' },
       { name: '30/30', info: 'fractionne-30-30', label: '30/30', inner: { work: 30, rest: 30, rounds: 10 }, note: `${fastRun(p)} Pas le temps de sortir ? Remplace par des montées de genoux sur place.` },
       { name: 'Retour au calme', info: 'course-endurance', work: 300, timed: true, note: 'Marche ou footing lent.' },
+    ],
+  },
+
+  // ---------- Cardio sans course (case « Je peux courir » décochée) ----------
+  fractionneVelo: {
+    type: 'cardio', title: 'Fractionné vélo ou rameur', restAfter: 60, run: true,
+    build: ({ sets }) => [
+      { name: 'Échauffement vélo ou rameur', info: 'cardio-machine', work: 600, timed: true, note: 'Facile, puis 3 accélérations de 15 s.' },
+      { name: '30/30 sur vélo ou rameur', info: 'cardio-machine', label: '30/30', sets: sets(2), inner: { work: 30, rest: 30, rounds: sets(8) }, rest: 180, note: 'Fort sur l\'effort, tranquille pendant la récupération, sans t\'arrêter.' },
+      { name: 'Retour au calme', info: 'cardio-machine', work: 420, timed: true, note: 'Pédale ou rame lentement, puis étirements mollets, cuisses et dos.' },
+    ],
+  },
+  cardioMaison: {
+    type: 'cardio', title: 'Cardio fractionné à la maison', home: true, restAfter: 60, run: true,
+    build: ({ sets, f }) => {
+      const rounds = sets(8);
+      return [
+        WARMUP_GYM(300, 'Marche sur place, cercles de bras, squats lents, jumping jacks légers.'),
+        { name: 'Circuit cardio 30/30', info: CARDIO_INFO, label: 'Circuit cardio', sets: sets(2), inner: { work: 30, rest: 30, rounds }, innerLabels: moves(rounds), rest: 120, note: 'Effort fort sur 30 s, récupération en marchant sur place.' },
+        homeCardio(minutes(10, f)),
+        { name: 'Retour au calme', info: 'etirements', work: 300, timed: true, note: 'Marche lente, puis étirements mollets, cuisses et hanches.' },
+      ];
+    },
+  },
+  expressCardio: {
+    type: 'cardio', title: 'Cardio express à la maison', home: true, run: true, restAfter: 30,
+    build: () => [
+      WARMUP_GYM(180, 'Marche sur place, cercles de bras, jumping jacks légers.'),
+      { name: 'Circuit cardio 30/30', info: CARDIO_INFO, label: 'Circuit cardio', inner: { work: 30, rest: 30, rounds: 16 }, innerLabels: moves(16), note: 'Effort fort sur 30 s, récupération en marchant sur place.' },
+      { name: 'Étirements', info: 'etirements', work: 180, timed: true, note: 'Mollets, cuisses, hanches.' },
     ],
   },
 
@@ -724,7 +785,7 @@ const TEMPLATES = {
   // ---------- Prise de référence : à refaire toutes les 4 semaines ----------
   reference: {
     type: 'muscu', title: 'Prise de référence', home: true, reference: true, restAfter: 180,
-    build: () => [
+    build: ({ run }) => [
       MOBILITY,
       { ...WARMUP_GYM(300, 'Jumping jacks, 10 pompes faciles, 3 tractions faciles, quelques fermetures de pince légères.'), restAfter: 60 },
       { name: 'Test : pompes max', info: 'pompes', test: 'pushups', countUp: true, work: 60, note: 'Le plus possible sans pause, poitrine près du sol, corps gainé. Arrête quand la technique casse.' },
@@ -733,7 +794,7 @@ const TEMPLATES = {
       { name: 'Test : pince', info: 'pince', test: 'gripper', countUp: true, work: 300, restAfter: 120, note: 'Monte par paliers de 5 kg (une fermeture complète par palier, 1 min de repos entre les paliers). Note la charge max fermée proprement. Stop à la moindre douleur dans un doigt.' },
       { name: 'Test : planche max', info: 'planche', test: 'plank', countUp: true, work: 90, restAfter: 120, note: 'Tiens tant que le dos reste droit.' },
       { name: 'Test : goblet squat', info: 'goblet-squat', test: 'squat', countUp: true, work: 75, note: 'Haltère 10 kg et gilet 8 kg. Répétitions max avec une technique propre.' },
-      { name: 'Test : course 12 min (optionnel)', info: 'test-cooper', test: 'cooper', work: 720, timed: true, note: 'La plus grande distance possible en 12 min sur terrain plat. Peut se faire un autre jour.' },
+      run && { name: 'Test : course 12 min (optionnel)', info: 'test-cooper', test: 'cooper', work: 720, timed: true, note: 'La plus grande distance possible en 12 min sur terrain plat. Peut se faire un autre jour.' },
     ],
   },
 };

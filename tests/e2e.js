@@ -200,6 +200,15 @@ try {
   await page.click('[data-form="settings"] button.primary');
   await page.click('nav [data-go="week"]');
   check((await page.$$('.day-session')).length === 5, '5 séances après réglage');
+  check((await page.textContent('.days')).includes('Course fractionnée'), 'fractionné en course');
+
+  // Course décochée : le cardio passe sur vélo ou rameur.
+  await page.click('nav [data-go="settings"]');
+  await page.uncheck('input[name=accessCourse]');
+  await page.click('[data-form="settings"] button.primary');
+  await page.click('nav [data-go="week"]');
+  const week = await page.textContent('.days');
+  check(week.includes('Fractionné vélo ou rameur') && !/course/i.test(week), 'plus de course dans la semaine');
   await page.click('nav [data-go="settings"]');
   check(!(await page.isChecked('input[name=voice]')), 'réglage des annonces vocales');
   await shot('5-reglages');

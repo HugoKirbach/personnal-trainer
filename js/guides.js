@@ -453,6 +453,47 @@ Object.assign(GUIDES, {
     tip: 'L\'appli en déduit ta VMA et tes allures de footing et de fractionné.',
   },
 
+  // ---------- Cardio sans course ----------
+  'jumping-jacks': {
+    title: 'Jumping jacks', query: 'jumping jacks technique',
+    steps: [
+      'Debout, pieds joints, bras le long du corps.',
+      'Saute en écartant les pieds et en montant les bras au-dessus de la tête.',
+      'Reviens pieds joints, bras le long du corps, et enchaîne.',
+    ],
+    errors: ['Atterrir talons d\'abord, genoux tendus : reste sur l\'avant du pied, genoux souples.'],
+    tip: 'Version sans saut : écarte un pied après l\'autre.',
+  },
+  'shadow-boxing': {
+    title: 'Shadow boxing', query: 'shadow boxing débutant cardio',
+    steps: [
+      'En garde : pieds écartés, un pied devant, poings près du menton.',
+      'Enchaîne directs, crochets et uppercuts dans le vide, en restant léger sur les appuis.',
+      'Expire à chaque coup et ramène vite le poing en garde.',
+    ],
+    errors: ['Verrouiller le coude en fin de coup.', 'Hausser les épaules : garde la nuque relâchée.'],
+  },
+  burpees: {
+    title: 'Burpees sans saut', query: 'burpee sans saut débutant',
+    steps: [
+      'Debout, accroupis-toi et pose les mains au sol devant les pieds.',
+      'Recule les pieds un par un jusqu\'en position de planche.',
+      'Ramène les pieds un par un vers les mains, puis relève-toi.',
+    ],
+    errors: ['Creuser le dos en planche.', 'Aller trop vite au détriment du gainage.'],
+    tip: 'Plus intense : saute les pieds en arrière puis en avant, et termine par un saut.',
+  },
+  'cardio-machine': {
+    title: 'Vélo, rameur ou elliptique', query: 'rameur technique débutant vélo elliptique cardio',
+    steps: [
+      'Vélo : selle à hauteur de hanche, jambe presque tendue en bas du coup de pédale.',
+      'Rameur : jambes, puis buste, puis bras à la poussée, et l\'inverse au retour. Dos droit.',
+      'Elliptique : buste droit, pousse aussi avec les bras.',
+      'Endurance : tu dois pouvoir parler. Fractionné : fort sur l\'effort, sans t\'arrêter pendant la récupération.',
+    ],
+    errors: ['Rameur : tirer avec les bras en premier ou arrondir le dos.', 'Vélo : selle trop basse, genoux qui souffrent.'],
+  },
+
   // ---------- Parcours abdos ----------
   'crunch-inverse': {
     title: 'Crunch inversé', query: 'crunch inversé reverse crunch technique',
