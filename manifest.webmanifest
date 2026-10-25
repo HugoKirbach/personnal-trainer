@@ -1,10 +1,11 @@
 {
+  "id": "/personnal-trainer/",
   "name": "Personal Trainer",
   "short_name": "Trainer",
   "description": "Programme escalade, muscu et course, chrono et suivi.",
   "lang": "fr",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/personnal-trainer/",
+  "scope": "/personnal-trainer/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#111214",
