@@ -127,6 +127,14 @@ try {
   await shot('0i-detente');
   await page.click('.relax-wrap [data-routine-done]');
   check((await page.textContent('.relax-wrap summary')).includes('fait'), 'parcours détente noté');
+  // Un menu ouvert ou fermé au doigt garde cet état quand la page se redessine.
+  await page.click('.routine-wrap > summary');
+  if (await page.$eval('.routine-wrap', (el) => el.open)) await page.click('.routine-wrap > summary');
+  if (!(await page.$eval('.abs-wrap', (el) => el.open))) await page.click('.abs-wrap > summary');
+  await page.click('.relax-wrap > summary');
+  await page.click('.relax-wrap label:has(input[data-sore="cuisses"])');
+  check(!(await page.$eval('.routine-wrap', (el) => el.open)), 'menu refermé : il ne se rouvre pas');
+  check(await page.$eval('.abs-wrap', (el) => el.open), 'menu ouvert : il reste ouvert');
 
   // Active les accès en salle.
   await page.click('.top-settings');

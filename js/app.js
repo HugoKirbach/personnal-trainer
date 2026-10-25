@@ -32,14 +32,13 @@ let state = load();
 let view = 'today';
 let weekOffset = 0;
 let openSession = null; // { date, index } affiché en détail depuis la semaine
-let refOpen = false; // bloc « prise de référence » déplié
-let absOpen = false; // bloc « parcours abdos » déplié
-let routineOpen = false; // bloc « routine nuque et dos » déplié
-let detenteOpen = false; // bloc « parcours détente » déplié
+// Menus dépliables (details[data-keep]) : ouverts ou fermés au doigt, ou par l'appli (séance lancée, notée…).
+// Sans choix, chaque menu suit son état par défaut ; un choix reste valable d'un rendu à l'autre.
+const userOpen = {};
+const opened = (key, byDefault) => userOpen[key] ?? byDefault;
 let formEdit = false; // questionnaire d'état de forme rouvert pour modification
 let editBench = null; // date des résultats de référence en cours de modification
 let lastClimb = { kind: 'bloc', grade: null, level: null, gym: null }; // dernier type, cotation et niveau saisis dans le carnet d'escalade
-let painOpen = false; // formulaire « Signaler une douleur » déplié
 let openRecipe = null; // recette affichée dans l'onglet Alimentation
 let foodFilter = 'all'; // filtre de la liste des recettes
 let foodTab = 'recipes'; // recettes, semaine ou courses
@@ -101,10 +100,10 @@ function startGuided(id) {
   const s = findSession(id);
   guidedId = id;
   guidedView = null;
-  if (s.reference) refOpen = true;
-  if (s.key === 'detente') detenteOpen = true;
-  else if (s.mobility) routineOpen = true;
-  else if (s.bonus) absOpen = true;
+  if (s.reference) userOpen.ref = true;
+  if (s.key === 'detente') userOpen.detente = true;
+  else if (s.mobility) userOpen.routine = true;
+  else if (s.bonus) userOpen.abs = true;
   guided = new GuidedRunner(s, (v) => { guidedView = v; if (view === 'guided') paintGuided(); }, {
     sound: () => state.settings.sound,
     vibrate: () => state.settings.vibrate,
@@ -367,6 +366,7 @@ function render() {
   liftStep = null;
   if (view === 'guided') paintGuided();
   if (view === 'today' || view === 'stats') fillPhotos(main);
+  main.querySelectorAll('details[data-keep]').forEach((el) => { const v = userOpen[el.dataset.keep]; if (v !== undefined) el.open = v; });
   syncHistory();
 }
 
@@ -445,7 +445,7 @@ function renderToday() {
   // Prise de référence : en haut quand elle est à faire dans 3 jours ou moins, sinon en bas de la page.
   const due = benchDue(state, now);
   const soon = due.due || due.inDays <= 3;
-  const refBlock = `<details class="card ref-wrap bench-wrap" ${due.due || refOpen ? 'open' : ''}>
+  const refBlock = `<details class="card ref-wrap bench-wrap" data-keep="ref" ${opened('ref', due.due) ? 'open' : ''}>
       <summary>📏 Prise de référence ${due.due ? '<span class="pill due">À faire</span>' : `<span class="muted small">· ${due.inDays <= 1 ? 'demain' : `dans ${due.inDays} j`}</span>`}</summary>
       <p class="small muted">Toutes les 4 semaines : tes résultats recalculent répétitions, charges et allures de tes séances.</p>
       ${sessionCard(referenceSession(now, state))}
@@ -455,13 +455,13 @@ function renderToday() {
   list.forEach((s) => { html += sessionCard(s); });
   const routine = routineSession(now, state);
   const routineLogged = !!logFor(routine);
-  html += `<details class="card ref-wrap routine-wrap" ${routineOpen || (!list.length && !routineLogged) ? 'open' : ''}>
+  html += `<details class="card ref-wrap routine-wrap" data-keep="routine" ${opened('routine', !list.length && !routineLogged) ? 'open' : ''}>
       <summary>🧘 Routine nuque et dos <span class="muted small">· ${routine.duration}${routineLogged ? ' · ✓ faite' : ''}</span></summary>
       <p class="small muted">Prévention du grimpeur : nuque, haut du dos, épaules et avant-bras. Idéale les jours sans séance, le matin ou à midi.</p>
       ${sessionCard(routine)}
     </details>`;
   const abs = absSession(now, state);
-  html += `<details class="card ref-wrap abs-wrap" ${absOpen ? 'open' : ''}>
+  html += `<details class="card ref-wrap abs-wrap" data-keep="abs" ${opened('abs', false) ? 'open' : ''}>
       <summary>🔥 Parcours abdos <span class="muted small">· ${abs.duration}, ${abs.home ? 'à la maison' : 'en salle'}</span></summary>
       <p class="small muted">En plus du programme, quand tu veux : grand droit, obliques, gainage profond et lombaires.</p>
       ${sessionCard(abs)}
@@ -469,7 +469,7 @@ function renderToday() {
   html += detenteCard(now);
   if (!list.some((s) => s.type === 'escalade' && !s.home)) html += `<section class="card">${climbLogger(today, 'Grimpé hors programme ? Note tes voies et blocs ici.')}${projectPanel(today)}</section>`;
   if (!hurting) html += painCard(today);
-  html += `<details class="card"><summary>Noter une séance hors programme</summary>
+  html += `<details class="card" data-keep="extra"><summary>Noter une séance hors programme</summary>
     <form data-form="extra" class="stack">
       <label>Type <select name="type">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('')}</select></label>
       <label>Intitulé <input name="title" placeholder="Ex. grimpe avec des potes" required></label>
@@ -487,7 +487,7 @@ function detenteCard(now) {
   const done = !!logFor(relax);
   const zones = soreZones(state, today);
   const strong = state.forms?.[today]?.sore === 0;
-  return `<details class="card ref-wrap relax-wrap" ${detenteOpen || (strong && !done) ? 'open' : ''}>
+  return `<details class="card ref-wrap relax-wrap" data-keep="detente" ${opened('detente', strong && !done) ? 'open' : ''}>
       <summary>🌿 Parcours détente <span class="muted small">· ${relax.duration}${done ? ' · ✓ fait' : ''}</span></summary>
       <p class="small muted">Étirements doux, mobilité et respiration pour récupérer. ${state.recovery?.[today] ? 'Où as-tu des courbatures ?' : 'Zones proposées selon tes dernières séances, change-les si besoin :'}</p>
       <div class="chips zone-chips">${Object.entries(SORE_ZONES).map(([k, l]) => `<label class="chip-check"><input type="checkbox" data-sore="${k}" ${zones.includes(k) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
@@ -529,13 +529,13 @@ function painCard(day) {
       <p class="small muted">Pendant 7 jours, les exercices qui sollicitent ces zones sont retirés de tes séances. Douleur vive, gonflement ou douleur qui dure : consulte.</p>
       <button class="primary">Adapter mes séances</button>
     </form>`;
-  if (!zones.length) return `<details class="card pain-card" ${painOpen ? 'open' : ''}><summary>🩹 Signaler une douleur</summary>${form}</details>`;
+  if (!zones.length) return `<details class="card pain-card" data-keep="pain"><summary>🩹 Signaler une douleur</summary>${form}</details>`;
   return `<section class="card pain-card active">
       <h2>🩹 Douleur en cours</h2>
       <p class="small muted">Les exercices qui sollicitent ces zones sont retirés de tes séances.</p>
       <ul class="pain-list">${zones.map((z) => `<li><span><strong>${ZONES[z]}</strong> <span class="muted small">jusqu'au ${shortDate(active[z])}</span></span>
         <button data-heal="${z}">Ça va mieux</button></li>`).join('')}</ul>
-      ${zones.length < Object.keys(ZONES).length ? `<details ${painOpen ? 'open' : ''}><summary class="small">Signaler une autre douleur</summary>${form}</details>` : ''}
+      ${zones.length < Object.keys(ZONES).length ? `<details data-keep="pain-more"><summary class="small">Signaler une autre douleur</summary>${form}</details>` : ''}
     </section>`;
 }
 
@@ -553,7 +553,7 @@ function climbLogger(date, intro = 'Note chaque voie ou bloc au fil de la séanc
   const grade = lastClimb.grade ?? GRADES[state.adapt.gradeIdx];
   const level = lastClimb.level ?? levelValue(GRADES[state.adapt.gradeIdx]);
   const sends = list.filter(sentClimb).length;
-  return `<details class="climbs" ${list.length || lastClimb.open === date ? 'open' : ''}>
+  return `<details class="climbs" data-keep="climbs" ${list.length || lastClimb.open === date ? 'open' : ''}>
       <summary>🧗 Carnet d'escalade${list.length ? ` <span class="muted small">· ${sends} enchaînée${sends > 1 ? 's' : ''} sur ${list.length}</span>` : ''}</summary>
       ${list.length ? `<ul class="climb-list">${list.map((c) => `<li><span class="grade-tag${c.kind === 'bloc' ? ' bloc' : ''}">${esc(gradeTag(c))}</span>
         <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}${c.level ? ` <span class="muted">· ≈ ${c.grade}</span>` : ''}${c.project ? ' · 🎯 projet' : ''}</span>
@@ -629,7 +629,7 @@ function projectHead(p) {
 function projectPanel(date, kind = null) {
   const active = activeProjects(state).sort((a, b) => (b.kind === kind) - (a.kind === kind));
   const sentToday = (state.projects || []).filter((p) => p.sent === date);
-  return `<details class="projects" ${active.length || sentToday.length ? 'open' : ''}>
+  return `<details class="projects" data-keep="projects" ${active.length || sentToday.length ? 'open' : ''}>
       <summary>🎯 Projets${active.length ? ` <span class="muted small">· ${active.length} en cours</span>` : ''}</summary>
       ${sentToday.map((p) => `<p class="small sent-line">🎉 ${esc(p.name)} (${esc(gradeTag(p))}) enchaîné aujourd'hui !</p>`).join('')}
       ${active.length ? `<ul class="project-list">${active.map((p) => {
@@ -659,7 +659,7 @@ function projectsCard() {
   return `<section class="card projects-card"><h2>🎯 Projets</h2>
       ${active.length ? list(active) : '<p class="small muted">Aucun projet en cours. Choisis une voie ou un bloc une cotation au-dessus de ton max, et note tes essais séance après séance.</p>'}
       ${sent.length ? `<h3>Enchaînés</h3>${list(sent)}` : ''}
-      ${parked.length ? `<details><summary class="small">Mis de côté (${parked.length})</summary>${list(parked)}</details>` : ''}
+      ${parked.length ? `<details data-keep="parked"><summary class="small">Mis de côté (${parked.length})</summary>${list(parked)}</details>` : ''}
       <button data-project-new="bloc">+ Nouveau projet</button>
     </section>`;
 }
@@ -1298,7 +1298,7 @@ function seasonCard() {
       ${block ? `<p class="small">Bloc en cours : <strong>${block.name}</strong>, semaine ${block.weekIn} sur ${block.weeks}. ${block.note}</p>` : ''}
       ${st.goals.map(goalLine).join('')}
       ${gains.length ? `<p class="small muted">Depuis le début du plan : ${gains.join(', ')}.</p>` : ''}
-      <details><summary class="small">Tous les blocs</summary>
+      <details data-keep="blocks"><summary class="small">Tous les blocs</summary>
         <table class="table"><tbody>${st.plans.map((plan) => `${plan.blocks.map((b) => `<tr class="${block && week(b) ? 'cur' : ''}"><td>${BLOCKS[b.phase].name}</td>
           <td class="num">${b.to - b.from + 1} sem.</td><td class="num">${shortDate(ymd(monday(b.from)))}</td></tr>`).join('')}
           <tr class="goal-row"><td colspan="2">🎯 ${plan.goals.map((g) => esc(goalLabel(g))).join(' et ')}</td><td class="num">${shortDate(plan.date)}</td></tr>`).join('')}</tbody></table>
@@ -1517,6 +1517,13 @@ async function showBackups(box) {
 }
 
 // ---------- Événements ----------
+// Un menu ouvert ou fermé au doigt le reste quand la page se redessine.
+document.addEventListener('click', (e) => {
+  const sum = e.target.closest('summary');
+  const el = sum?.parentElement;
+  if (el?.matches('details[data-keep]') && el.querySelector(':scope > summary') === sum) userOpen[el.dataset.keep] = !el.open;
+});
+
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
@@ -1527,7 +1534,7 @@ document.addEventListener('click', async (e) => {
   if (d.info !== undefined && d.info) return openGuide(d.info);
   if (d.action === 'close-sheet') { closeSheet(); return; }
   if (d.guided) return startGuided(d.guided);
-  if (d.benchEdit) { editBench = d.benchEdit; refOpen = true; return render(); }
+  if (d.benchEdit) { editBench = d.benchEdit; userOpen.ref = true; return render(); }
   if (d.action === 'resume-guided') return go('guided');
   if (d.g === 'toggle') {
     if (guided.running) { guided.pause(); stopSpeaking(); releaseWake(); } else { guided.start(); requestWake(); }
@@ -1599,8 +1606,8 @@ document.addEventListener('click', async (e) => {
     state.logs.push({ id: `${Date.now()}`, type: r.type, title: r.title, date: r.date, sessionIndex: r.index, key: r.key, variant: r.variant, home: true, bonus: true, mobility: true, feeling: 'ok', completed: true, zones: [], note: '' });
     state.logs.sort((a, b) => a.date.localeCompare(b.date));
     persist();
-    if (r.key === 'detente') { detenteOpen = false; render(); return toast('Parcours détente noté 🌿 Bonne récupération.', 2500); }
-    routineOpen = false;
+    if (r.key === 'detente') { userOpen.detente = false; render(); return toast('Parcours détente noté 🌿 Bonne récupération.', 2500); }
+    userOpen.routine = false;
     render();
     return toast('Routine notée 🧘 Ta nuque te remercie.', 2500);
   }
@@ -1808,7 +1815,7 @@ document.addEventListener('change', (e) => {
     const zones = new Set(soreZones(state, day));
     if (t.checked) zones.add(t.dataset.sore); else zones.delete(t.dataset.sore);
     setSore(state, day, [...zones]);
-    detenteOpen = true;
+    userOpen.detente = true;
     persist(); return render();
   }
   if (t.dataset.cart) {
@@ -1900,7 +1907,8 @@ document.addEventListener('submit', (e) => {
     const zones = fd.getAll('zone');
     if (!zones.length) return toast('Choisis au moins une zone.');
     addPains(state, zones, f.dataset.date);
-    painOpen = false;
+    userOpen.pain = false;
+    userOpen['pain-more'] = false;
     persist(); render();
     return toast(`Séances adaptées pour 7 jours (${zones.map((z) => ZONES[z].toLowerCase()).join(', ')}). Reprends dès que ça va mieux.`, 5000);
   }
@@ -1921,7 +1929,7 @@ document.addEventListener('submit', (e) => {
     if (Object.keys(entry).length === 1) return toast('Note au moins un résultat.');
     state.benchmarks = [...(state.benchmarks || []).filter((b) => b.date !== entry.date), entry].sort((a, b) => a.date.localeCompare(b.date));
     editBench = null;
-    refOpen = true;
+    userOpen.ref = true;
     persist(); render();
     return toast(['Références enregistrées 📏', ...benchSummary(state)].join('<br>'), 8000);
   }
@@ -1997,7 +2005,7 @@ function gymsForm() {
       ${gyms.map((g, gi) => `<fieldset class="gym">
         <label>Nom <input name="name-${gi}" maxlength="40" value="${esc(g.name)}"></label>
         <label>Niveaux, séparés par des virgules <input name="levels-${gi}" value="${esc(g.levels.map((l) => l.name).join(', '))}"></label>
-        <details><summary class="small">Équivalences en cotation</summary>
+        <details data-keep="eq-${gi}"><summary class="small">Équivalences en cotation</summary>
           <div class="eq-grid">${g.levels.map((l, li) => `<label>${esc(l.name)} <select name="eq-${gi}-${li}">${SCALE.map((x) => `<option ${x === l.grade ? 'selected' : ''}>${x}</option>`).join('')}</select></label>`).join('')}</div>
         </details>
         ${gyms.length > 1 ? `<button type="button" class="link danger-link" data-gym-del="${gi}">Retirer cette salle</button>` : ''}
