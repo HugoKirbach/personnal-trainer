@@ -1,10 +1,10 @@
 // Service worker : fonctionnement hors ligne et rappel du jour.
-const VERSION = 'v7';
+const VERSION = 'v8';
 // Module de compte (Firebase, versionné dans l'URL) : gardé en cache pour retrouver sa session hors ligne.
 const SDK_CACHE = 'pt-sdk-10.12.2';
 const ASSETS = [
   './', 'index.html', 'css/styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/program.js', 'js/store.js', 'js/timer.js', 'js/charts.js', 'js/calendar.js', 'js/guided.js', 'js/guides.js', 'js/lifts.js', 'js/voice.js', 'js/cloud.js', 'js/merge.js', 'js/projects.js', 'js/photos.js',
+  'js/app.js', 'js/program.js', 'js/store.js', 'js/timer.js', 'js/charts.js', 'js/calendar.js', 'js/guided.js', 'js/guides.js', 'js/lifts.js', 'js/voice.js', 'js/cloud.js', 'js/merge.js', 'js/projects.js', 'js/photos.js', 'js/recipes.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/badge.png',
 ];
 

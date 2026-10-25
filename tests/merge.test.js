@@ -76,3 +76,13 @@ test('ancien objectif unique : devient l\'objectif de son type', () => {
   assert.equal(s.settings.goals.voie.grade, '7a');
   assert.equal(s.settings.gyms.length, 2, 'salles par défaut');
 });
+
+test('alimentation : recettes cochées et repas prévus sur deux téléphones', () => {
+  const base = state({ food: { cart: { chili: true, croque: true }, plan: { '2026-11-02': { soir: 'chili' } } } });
+  const local = state({ food: { cart: { chili: true, paella: true }, plan: { '2026-11-02': { soir: 'chili' }, '2026-11-03': { soir: 'paella' } } }, updatedAt: 5 });
+  const remote = state({ food: { cart: { chili: true, croque: true, bulgogi: true }, plan: { '2026-11-02': { soir: 'chili', midi: 'cantine' } } }, updatedAt: 4 });
+  const m = mergeStates(local, remote, base);
+  assert.deepEqual(Object.keys(m.food.cart).sort(), ['bulgogi', 'chili', 'paella'], 'croque décochée d\'un côté, bulgogi cochée de l\'autre');
+  assert.deepEqual(m.food.plan['2026-11-02'], { soir: 'chili', midi: 'cantine' });
+  assert.equal(m.food.plan['2026-11-03'].soir, 'paella');
+});

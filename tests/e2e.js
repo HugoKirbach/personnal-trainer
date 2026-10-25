@@ -256,6 +256,37 @@ try {
   check((await page.textContent('.days li:nth-child(2)')).includes('haut du corps'), 'séance déplacée au mardi');
   await shot('3-semaine');
 
+  // Alimentation : la liste de courses suit les recettes cochées, pour leurs portions.
+  await page.click('nav [data-go="food"]');
+  check((await page.$$('.recipe-item')).length === 30, '20 plats et 10 collations');
+  for (const id of ['bulgogi', 'paella', 'onigiri']) await page.check(`input[data-cart="${id}"]`);
+  check((await page.textContent('.cart-bar')).includes('3 recettes cochées'), 'recettes cochées pour les courses');
+  await page.click('[data-recipe="bulgogi"]');
+  check((await page.textContent('#main h1')).includes('Bulgogi'), 'fiche recette ouverte');
+  await page.click('[data-servings="bulgogi|1"]');
+  check((await page.textContent('.recipe-head')).includes('3 portions'), 'portions ajustées');
+  check((await page.textContent('[data-cart-toggle]')).includes('Dans la liste'), 'recette cochée rappelée sur la fiche');
+  await shot('3b-recette');
+  await page.click('[data-recipe-close]');
+  await page.click('.cart-bar');
+  const shop = await page.textContent('#main');
+  check(shop.includes('450 g bœuf émincé'), 'courses pour 3 portions de bulgogi');
+  check(shop.includes('chorizo') && shop.includes('thon'), 'ingrédients des recettes cochées');
+  check(!shop.includes('saumon'), 'rien des recettes non cochées');
+  await page.check('input[data-shop] >> nth=0');
+  check((await page.textContent('#main')).includes('1 article sur'), 'article coché dans le panier');
+  await page.click('[data-cart-remove="onigiri"]');
+  check(!(await page.textContent('#main')).includes('thon'), 'recette retirée avec ses ingrédients');
+  await shot('3c-courses');
+  await page.click('[data-food-tab="week"]');
+  await page.selectOption('.plan-day.today select[data-plan$="|soir"]', 'chili');
+  await page.click('[data-plan-fill]');
+  check((await page.$$eval('.plan-day select[data-plan$="|soir"]', (els) => els.filter((e) => e.value).length)) >= 2, 'soirs vides remplis selon les séances');
+  await page.click('[data-plan-cart]');
+  check((await page.textContent('.cart-list')).includes('Chili'), 'recettes de la semaine cochées pour les courses');
+  await page.click('nav [data-go="today"]');
+  check((await page.textContent('.meal-card')).includes('Chili con carne'), 'repas du soir rappelé sur Aujourd\'hui');
+
   // Suivi : graphiques et historique.
   await page.click('nav [data-go="stats"]');
   check((await page.$$('svg.chart')).length >= 3, 'graphiques affichés');

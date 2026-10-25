@@ -18,6 +18,10 @@ import {
   HIGHS, MAX_ACTIVE, PROJECT_STATUS, TRIES_PER_SESSION, activeProjects, addProject, logTry, projectStats, removeProject, sendProject, setProjectStatus, suggestGrade,
 } from './projects.js';
 import { deletePhoto, fillPhotos, savePhoto } from './photos.js';
+import {
+  FILTERS, MEALS, OUTSIDE, RECIPES, SLOTS, TOOLS, cartFromPlan, cartPicks, dayTotals, fillDinners, filterRecipes, formatMinutes, formatQty, kcalTarget, planPicks, proteinTarget,
+  scaleIngredients, shoppingList, stepMinutes, stepText, suggestMeals, totalTime,
+} from './recipes.js';
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
 import { GUIDES, videoUrl } from './guides.js';
@@ -35,6 +39,10 @@ let formEdit = false; // questionnaire d'état de forme rouvert pour modificatio
 let editBench = null; // date des résultats de référence en cours de modification
 let lastClimb = { kind: 'bloc', grade: null, level: null, gym: null }; // dernier type, cotation et niveau saisis dans le carnet d'escalade
 let painOpen = false; // formulaire « Signaler une douleur » déplié
+let openRecipe = null; // recette affichée dans l'onglet Alimentation
+let foodFilter = 'all'; // filtre de la liste des recettes
+let foodTab = 'recipes'; // recettes, semaine ou courses
+let foodWeek = 0; // décalage en semaines du planning des repas
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const persist = () => { save(state); writePlan(); };
@@ -340,7 +348,7 @@ function render() {
   $('#week-badge').textContent = `Semaine ${info.week} · ${block ? block.name : info.phase.name}`;
   const main = $('#main');
   main.innerHTML = {
-    today: renderToday, week: renderWeek, timer: renderTimer, stats: renderStats, settings: renderSettings, guided: renderGuided,
+    today: renderToday, week: renderWeek, timer: renderTimer, food: renderFood, stats: renderStats, settings: renderSettings, guided: renderGuided,
   }[view]();
   if (view === 'timer') paintTimer();
   if (view === 'settings') cloudDrawn = cloudShape(cloudStatus());
@@ -380,6 +388,7 @@ function renderToday() {
       <p class="small muted">Prévention du grimpeur : nuque, haut du dos, épaules et avant-bras. Idéale les jours sans séance, le matin ou à midi.</p>
       ${sessionCard(routine)}
     </details>`;
+  html += mealCard(today);
   const abs = absSession(now, state);
   html += `<details class="card ref-wrap abs-wrap" ${absOpen ? 'open' : ''}>
       <summary>🔥 Parcours abdos <span class="muted small">· ${abs.duration}, ${abs.home ? 'à la maison' : 'en salle'}</span></summary>
@@ -986,6 +995,171 @@ function renderStats() {
     </section>`;
 }
 
+// ---------- Alimentation ----------
+const foodState = () => {
+  state.food = { favorites: {}, servings: {}, plan: {}, cart: {}, checked: {}, ...state.food };
+  return state.food;
+};
+const recipeById = (id) => RECIPES.find((r) => r.id === id);
+const recipeMeta = (r) => `${formatMinutes(totalTime(r))}${r.marinate ? ` (+ ${formatMinutes(r.marinate)} de marinade)` : ''} · ${r.kcal} kcal · ${r.protein} g de protéines`;
+const FOOD_TABS = { recipes: 'Recettes', week: 'Semaine', shop: 'Courses' };
+
+// Jour d'entraînement : une séance du programme est prévue ce jour-là.
+function trainingOn(date) {
+  return sessionsOn(date, state).filter((s) => !s.bonus);
+}
+
+function foodMonday() {
+  const m = mondayOf(new Date());
+  m.setDate(m.getDate() + 7 * foodWeek);
+  return m;
+}
+const weekDates = (monday) => Array.from({ length: 7 }, (_, i) => ymd(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)));
+
+function renderFood() {
+  if (openRecipe) {
+    const r = recipeById(openRecipe);
+    if (r) return recipeView(r);
+    openRecipe = null;
+  }
+  return `<h1>Alimentation</h1>
+    <div class="seg food-tabs">${Object.entries(FOOD_TABS).map(([k, l]) => `<button class="${foodTab === k ? 'active' : ''}" data-food-tab="${k}">${l}</button>`).join('')}</div>
+    ${{ recipes: foodRecipes, week: foodPlan, shop: foodShop }[foodTab]()}`;
+}
+
+function suggestCard() {
+  const now = new Date();
+  const sessions = trainingOn(now);
+  const { dinners, snack } = suggestMeals(sessions.length > 0, now);
+  const why = sessions.length
+    ? `${sessions.map((s) => `${s.title} ${SLOT_WHEN[s.slot] || ''}`.trim()).join(', ')} : des plats riches en glucides pour avoir de l'énergie et récupérer.`
+    : 'Jour de repos : des protéines et des légumes, un peu moins de féculents.';
+  return `<section class="card suggest-card"><h2>Idées pour aujourd'hui</h2>
+      <p class="small muted">${esc(why)}</p>
+      <div class="chips">${[...dinners, snack].filter(Boolean).map((r) => `<button class="chip" data-recipe="${r.id}">${esc(r.name.split(',')[0])}</button>`).join('')}</div>
+    </section>`;
+}
+const SLOT_WHEN = { midi: 'ce midi', soir: 'ce soir', weekend: 'aujourd\'hui' };
+
+function foodRecipes() {
+  const { favorites: fav, cart } = foodState();
+  const list = filterRecipes(RECIPES, foodFilter, null, fav);
+  const ticked = Object.keys(cart).filter(recipeById).length;
+  const chips = [...Object.entries(FILTERS).map(([k, f]) => [k, f.label]), ['fav', '★ Favoris']];
+  return `${suggestCard()}
+    <div class="chips food-filters">${chips.map(([k, l]) => `<button class="chip${foodFilter === k ? ' active' : ''}" data-food-filter="${k}">${l}</button>`).join('')}</div>
+    ${!list.length ? `<p class="empty">${foodFilter === 'fav' ? 'Aucun favori pour l\'instant : touche ☆ sur une recette pour la garder ici.' : 'Aucune recette pour ce filtre.'}</p>` : ''}
+    ${Object.entries(MEALS).map(([meal, label]) => {
+      const rs = list.filter((r) => r.meal === meal);
+      return rs.length ? `<section class="card"><h2>${label}</h2><ul class="recipe-list">${rs.map((r) => `<li>
+        <label class="cart-check"><input type="checkbox" data-cart="${r.id}" ${cart[r.id] ? 'checked' : ''} aria-label="Cocher ${esc(r.name.split(',')[0])} pour les courses"></label>
+        <button class="recipe-item" data-recipe="${r.id}">
+          <span class="recipe-name"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.cuisine)} · ${recipeMeta(r)}${r.freezer ? ' · se congèle' : ''}</span></span>
+          ${fav[r.id] ? '<span class="fav-mark" aria-label="Favori">★</span>' : ''}
+        </button></li>`).join('')}</ul></section>` : '';
+    }).join('')}
+    ${ticked ? `<button class="cart-bar primary" data-food-tab="shop">🛒 ${ticked} recette${ticked > 1 ? 's cochées' : ' cochée'} · voir la liste</button>`
+      : '<p class="small muted center">Coche les recettes que tu veux cuisiner : la liste de courses se fait toute seule.</p>'}`;
+}
+
+function planOptions(slot, value) {
+  const opt = (v, l) => `<option value="${v}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`;
+  const outside = slot === 'collation' ? [] : Object.entries(OUTSIDE).filter(([k]) => slot === 'midi' || k === 'dehors');
+  const meals = slot === 'collation' ? ['collation'] : ['plat'];
+  return `${opt('', '—')}${outside.map(([k, l]) => opt(k, l)).join('')}
+    ${meals.map((m) => `<optgroup label="${MEALS[m]}">${RECIPES.filter((r) => r.meal === m).map((r) => opt(r.id, r.name)).join('')}</optgroup>`).join('')}`;
+}
+
+function foodPlan() {
+  const fs = foodState();
+  const monday = foodMonday();
+  const dates = weekDates(monday);
+  const today = ymd(new Date());
+  const kg = state.settings.weight || 62;
+  const cook = planPicks(fs.plan, dates).map(({ id, servings }) => `${esc(recipeById(id).name.split(',')[0])} (${plural(servings, 'portion')})`);
+  return `<div class="week-nav"><button data-food-week="-1" aria-label="Semaine précédente" ${foodWeek > -1 ? '' : 'disabled'}>‹</button>
+      <strong>Semaine du ${shortDate(dates[0])}</strong>
+      <button data-food-week="1" aria-label="Semaine suivante" ${foodWeek < 3 ? '' : 'disabled'}>›</button></div>
+    <p class="small muted">Repère pour ${String(kg).replace('.', ',')} kg : environ ${proteinTarget(kg)} g de protéines et ${kcalTarget(kg).toLocaleString('fr-FR')} kcal par jour, à répartir sur tes repas (poids à régler dans Réglages). Prévois ce que tu veux, rien n'est obligatoire.</p>
+    ${cook.length ? `<p class="tip">🍳 <strong>À cuisiner :</strong> ${cook.join(', ')}.</p>` : ''}
+    <div class="plan-days">${dates.map((d) => {
+      const day = fs.plan[d] || {};
+      const t = dayTotals(day);
+      const sessions = trainingOn(parseYmd(d));
+      return `<section class="card plan-day${d === today ? ' today' : ''}">
+        <div class="plan-head"><strong class="cap">${parseYmd(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric' })}</strong>
+          <span class="small muted">${sessions.length ? sessions.map((s) => `${TYPES[s.type]?.label || s.title} (${s.slot === 'weekend' ? 'journée' : s.slot})`).join(', ') : 'repos'}</span></div>
+        <div class="plan-slots">${Object.entries(SLOTS).map(([slot, label]) => `<label>${label}<select data-plan="${d}|${slot}">${planOptions(slot, day[slot] || '')}</select></label>`).join('')}</div>
+        ${t.protein ? `<p class="small muted">≈ ${t.protein} g de protéines prévues${t.outside ? ', plus le repas dehors' : ''} sur ${proteinTarget(kg)} g.</p>` : ''}
+      </section>`;
+    }).join('')}</div>
+    <div class="row-btns"><button data-plan-fill>✨ Remplir les soirs vides</button><button class="primary" data-plan-cart>🛒 Courses de la semaine</button></div>`;
+}
+
+function foodShop() {
+  const fs = foodState();
+  const picks = cartPicks(fs);
+  if (!picks.length) {
+    const planned = planPicks(fs.plan, weekDates(foodMonday()).filter((d) => d >= ymd(new Date()))).length;
+    return `<p class="empty">Aucune recette cochée. Coche celles que tu veux cuisiner dans Recettes : la liste de courses se fait toute seule, pour le nombre de portions choisi.</p>
+      <div class="row-btns"><button data-food-tab="recipes">Choisir des recettes</button>${planned ? '<button data-plan-cart>Cocher les recettes de ma semaine</button>' : ''}</div>`;
+  }
+  const groups = shoppingList(picks);
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  const done = groups.reduce((n, g) => n + g.items.filter((i) => fs.checked[i.key]).length, 0);
+  return `<section class="card"><h2>Recettes cochées</h2>
+      <ul class="cart-list">${picks.map(({ id, servings }) => `<li>
+        <button class="link strong" data-recipe="${id}">${esc(recipeById(id).name.split(',')[0])}</button>
+        <div class="try-count"><button data-servings="${id}|-1" aria-label="Une portion de moins" ${servings > 1 ? '' : 'disabled'}>−</button><span><strong>${servings}</strong> port.</span><button data-servings="${id}|1" aria-label="Une portion de plus" ${servings < 12 ? '' : 'disabled'}>+</button></div>
+        <button class="icon-btn" data-cart-remove="${id}" aria-label="Retirer de la liste">✕</button></li>`).join('')}</ul>
+    </section>
+    <p class="small muted">${done} article${done > 1 ? 's' : ''} sur ${total} dans le panier.</p>
+    ${groups.map((g) => `<section class="card"><h2>${g.label}</h2><ul class="ingredients shop-list">${g.items.map((i) => `<li><label class="check"><input type="checkbox" data-shop="${esc(i.key)}" ${fs.checked[i.key] ? 'checked' : ''}><span>${i.qty != null ? `<strong>${formatQty(i.qty, i.unit)}</strong> ` : ''}${esc(i.name)}${i.from.length > 1 ? ` <span class="muted small">· ${i.from.length} recettes</span>` : ''}</span></label></li>`).join('')}</ul></section>`).join('')}
+    <div class="row-btns"><button data-shop-clear>Tout décocher</button><button data-shop-reset>Vider la liste</button></div>`;
+}
+
+function recipeView(r) {
+  const fs = foodState();
+  const servings = fs.servings[r.id] || r.servings;
+  const ings = scaleIngredients(r, servings);
+  const fav = !!fs.favorites[r.id];
+  const keeps = [r.fridge ? `${plural(r.fridge, 'jour')} au frigo` : '', r.freezer ? 'se congèle (2 mois)' : ''].filter(Boolean).join(', ');
+  const tonight = fs.plan[ymd(new Date())]?.soir === r.id;
+  const inCart = !!fs.cart[r.id];
+  return `<button class="link back-link" data-recipe-close>← Toutes les recettes</button>
+    <h1>${esc(r.name)}</h1>
+    <p class="small muted">${esc(r.cuisine)} · ${formatMinutes(r.prep)} de préparation${r.cook ? ` · ${formatMinutes(r.cook)} de cuisson` : ''}${r.marinate ? ` · ${formatMinutes(r.marinate)} de marinade` : ''} · ${r.tools.length ? r.tools.map((t) => TOOLS[t]).join(', ') : 'sans cuisson'}</p>
+    <div class="tiles macro-tiles">
+      ${[[r.kcal, 'kcal'], [`${r.protein} g`, 'protéines'], [`${r.carbs} g`, 'glucides'], [`${r.fat} g`, 'lipides']].map(([v, l]) => `<div class="tile"><span class="big-num">${v}</span><span>${l}</span></div>`).join('')}
+    </div>
+    <p class="small muted center">Par portion, valeurs approximatives.</p>
+    <section class="card">
+      <div class="recipe-head"><h2>Ingrédients</h2>
+        <div class="try-count"><button data-servings="${r.id}|-1" aria-label="Une portion de moins" ${servings > 1 ? '' : 'disabled'}>−</button><span><strong>${servings}</strong> portion${servings > 1 ? 's' : ''}</span><button data-servings="${r.id}|1" aria-label="Une portion de plus" ${servings < 12 ? '' : 'disabled'}>+</button></div>
+      </div>
+      <ul class="ingredients">${ings.map((i) => `<li><label class="check"><input type="checkbox"><span>${i.qty != null ? `<strong>${formatQty(i.qty, i.unit)}</strong> ` : ''}${esc(i.name)}</span></label></li>`).join('')}</ul>
+      <div class="row-btns"><button class="${inCart ? 'on' : ''}" data-cart-toggle="${r.id}">${inCart ? '✓ Dans la liste de courses' : '🛒 Cocher pour les courses'}</button><button data-plan-tonight="${r.id}" ${tonight ? 'disabled' : ''}>${tonight ? '✓ Au menu ce soir' : '📅 Au menu ce soir'}</button></div>
+    </section>
+    <section class="card">
+      <h2>Préparation</h2>
+      <ol class="steps">${r.steps.map((st) => `<li><span>${esc(stepText(st))}</span>${stepMinutes(st) ? `<button class="chip step-timer" data-step-timer="${stepMinutes(st)}" data-label="${esc(r.name.split(',')[0])}">⏱ ${stepMinutes(st)} min</button>` : ''}</li>`).join('')}</ol>
+    </section>
+    ${keeps ? `<p class="tip">🧊 <strong>Conservation :</strong> ${keeps}.</p>` : ''}
+    ${r.tip ? `<p class="tip">💡 ${esc(r.tip)}</p>` : ''}
+    <button class="fav-btn${fav ? ' on' : ''}" data-fav="${r.id}">${fav ? '★ Dans tes favoris' : '☆ Ajouter aux favoris'}</button>`;
+}
+
+// Sur Aujourd'hui : le repas prévu ce soir, ou une idée selon la séance du jour.
+function mealCard(today) {
+  const day = foodState().plan[today] || {};
+  const planned = Object.entries(SLOTS).map(([slot, label]) => [label, day[slot]]).filter(([, v]) => v);
+  if (planned.length) {
+    return `<section class="card meal-card"><h2>🍽️ Au menu</h2><ul class="meal-list">${planned.map(([label, v]) => `<li><span class="muted small">${label}</span>${recipeById(v) ? `<button class="link strong" data-recipe="${v}" data-go-food>${esc(recipeById(v).name)}</button>` : `<span>${OUTSIDE[v]}</span>`}</li>`).join('')}</ul></section>`;
+  }
+  const { dinners } = suggestMeals(trainingOn(new Date()).length > 0, new Date());
+  return `<section class="card meal-card"><p class="small">🍽️ Idée pour ce soir : <button class="link strong" data-recipe="${dinners[0].id}" data-go-food>${esc(dinners[0].name)}</button></p></section>`;
+}
+
 // ---------- Objectif de saison ----------
 const KIND_LABEL = { voie: 'voie', bloc: 'bloc' };
 const GAIN_LABEL = { pullups: ['tractions', ''], hang: ['suspension', ' s'], gripper: ['pince', ' kg'] };
@@ -1088,6 +1262,8 @@ function renderSettings() {
       <h2>Programme</h2>
       <label>Séances par semaine <select name="sessionsPerWeek">${[3, 4, 5].map((n) => `<option ${n === s.sessionsPerWeek ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label>Début du programme (lundi) <input type="date" name="startDate" value="${s.startDate}"></label>
+      <label>Poids (kg) <input type="number" name="weight" min="35" max="150" step="0.5" inputmode="decimal" value="${s.weight || 62}">
+        <span class="small muted">Pour tes repères de protéines et de calories dans Alimentation.</span></label>
       <div class="grid3">
         <label>Midi <input type="time" name="midi" value="${s.times.midi}"></label>
         <label>Soir <input type="time" name="soir" value="${s.times.soir}"></label>
@@ -1336,6 +1512,67 @@ document.addEventListener('click', async (e) => {
     else gyms.push({ id: `g${Date.now().toString(36)}`, name: `Salle ${gyms.length + 1}`, levels: ['Facile', 'Moyen', 'Difficile', 'Très difficile'].map((name, i) => ({ name, grade: SCALE[2 + i * 2] })) });
     persist(); return render();
   }
+  if (d.foodFilter) { foodFilter = d.foodFilter; return render(); }
+  if (d.foodTab) { foodTab = d.foodTab; openRecipe = null; render(); return window.scrollTo(0, 0); }
+  if (d.foodWeek) { foodWeek += Number(d.foodWeek); return render(); }
+  if (d.recipe) { openRecipe = d.recipe; if (d.goFood !== undefined) view = 'food'; render(); return window.scrollTo(0, 0); }
+  if (d.recipeClose !== undefined) { openRecipe = null; return render(); }
+  if (d.servings) {
+    const [id, delta] = d.servings.split('|');
+    const fs = foodState();
+    fs.servings = { ...fs.servings, [id]: Math.min(12, Math.max(1, (fs.servings[id] || recipeById(id).servings) + Number(delta))) };
+    persist(); return render();
+  }
+  if (d.fav) {
+    const fs = foodState();
+    fs.favorites = { ...fs.favorites };
+    if (fs.favorites[d.fav]) delete fs.favorites[d.fav]; else fs.favorites[d.fav] = true;
+    persist(); render();
+    return toast(fs.favorites[d.fav] ? 'Recette ajoutée aux favoris.' : 'Recette retirée des favoris.', 1800);
+  }
+  if (d.cartToggle || d.cartRemove) {
+    const id = d.cartToggle || d.cartRemove;
+    const fs = foodState();
+    fs.cart = { ...fs.cart };
+    if (fs.cart[id]) delete fs.cart[id]; else fs.cart[id] = true;
+    persist(); render();
+    if (d.cartRemove) return;
+    return toast(fs.cart[id] ? `${recipeById(id).name.split(',')[0]} : ajouté à ta liste de courses.` : 'Recette retirée de ta liste de courses.', 2000);
+  }
+  if (d.planCart !== undefined) {
+    const fs = foodState();
+    const dates = weekDates(foodMonday()).filter((d) => d >= ymd(new Date()));
+    const n = planPicks(fs.plan, dates).length;
+    Object.assign(fs, cartFromPlan(fs, dates));
+    foodTab = 'shop';
+    persist(); render(); window.scrollTo(0, 0);
+    return toast(n ? `${n} recette${n > 1 ? 's' : ''} de ta semaine cochée${n > 1 ? 's' : ''} pour les courses.` : 'Aucune recette prévue cette semaine : coche-les dans Recettes.', 2500);
+  }
+  if (d.planTonight) {
+    const fs = foodState();
+    const today = ymd(new Date());
+    fs.plan = { ...fs.plan, [today]: { ...fs.plan[today], soir: d.planTonight } };
+    persist(); render();
+    return toast('Au menu ce soir. Retrouve-le sur Aujourd\'hui.', 2000);
+  }
+  if (d.planFill !== undefined) {
+    const fs = foodState();
+    const today = ymd(new Date());
+    const days = weekDates(foodMonday()).filter((date) => date >= today).map((date) => ({ date, training: trainingOn(parseYmd(date)).length > 0 }));
+    const before = days.filter(({ date }) => fs.plan[date]?.soir).length;
+    fs.plan = fillDinners(fs.plan, days);
+    const added = days.filter(({ date }) => fs.plan[date]?.soir).length - before;
+    persist(); render();
+    return toast(added ? `${plural(added, 'soir')} rempli${added > 1 ? 's' : ''} selon tes séances. Change ce que tu veux.` : 'Tous les soirs sont déjà prévus.', 2500);
+  }
+  if (d.shopClear !== undefined) { foodState().checked = {}; persist(); return render(); }
+  if (d.shopReset !== undefined) { Object.assign(foodState(), { cart: {}, checked: {} }); persist(); return render(); }
+  if (d.stepTimer) {
+    const min = Number(d.stepTimer);
+    timer.reset({ mode: 'countdown', seconds: min * 60, label: d.label || 'Cuisson' });
+    timer.start(); requestWake();
+    return toast(`Minuteur de ${min} min lancé. Il sonne même si tu changes d'onglet (⏱ Chrono pour le voir).`, 3500);
+  }
   if (d.project) return openProjectSheet(d.project);
   if (d.projectNew) return openProjectForm(null, d.projectNew);
   if (d.projectEdit) return openProjectForm(d.projectEdit);
@@ -1451,6 +1688,27 @@ document.addEventListener('change', (e) => {
     delete state.checks[t.dataset.duration];
     persist(); render();
     return toast(t.value ? `Séance ramenée à ${t.value} min environ : l'essentiel est gardé.` : 'Séance complète rétablie.', 2500);
+  }
+  if (t.dataset.plan) {
+    const [date, slot] = t.dataset.plan.split('|');
+    const fs = foodState();
+    const day = { ...fs.plan[date], [slot]: t.value };
+    if (!t.value) delete day[slot];
+    fs.plan = { ...fs.plan, [date]: day };
+    if (!Object.keys(day).length) delete fs.plan[date];
+    persist(); return render();
+  }
+  if (t.dataset.cart) {
+    const fs = foodState();
+    fs.cart = { ...fs.cart };
+    if (t.checked) fs.cart[t.dataset.cart] = true; else delete fs.cart[t.dataset.cart];
+    persist(); return render();
+  }
+  if (t.dataset.shop) {
+    const fs = foodState();
+    fs.checked = { ...fs.checked };
+    if (t.checked) fs.checked[t.dataset.shop] = true; else delete fs.checked[t.dataset.shop];
+    persist(); return render();
   }
   if (t.dataset.phigh) {
     const [id, date] = t.dataset.phigh.split('|');
@@ -1569,6 +1827,8 @@ document.addEventListener('submit', (e) => {
     s.sessionsPerWeek = Number(fd.get('sessionsPerWeek'));
     const start = fd.get('startDate');
     if (start) s.startDate = ymd(mondayOf(parseYmd(start)));
+    const kg = Number(fd.get('weight'));
+    if (kg >= 35 && kg <= 150) s.weight = kg;
     s.times = { midi: fd.get('midi'), soir: fd.get('soir'), weekend: fd.get('weekend') };
     s.access = { escalade: !!fd.get('accessEscalade'), muscu: !!fd.get('accessMuscu'), course: !!fd.get('accessCourse') };
     s.sound = !!fd.get('sound');

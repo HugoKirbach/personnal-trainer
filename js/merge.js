@@ -40,6 +40,7 @@ export function mergeStates(local, remote, base = null) {
   // Projets : champ par champ, et le journal des essais date par date.
   out.projects = Object.values(mergeMap(toMap(b.projects, 'id'), toMap(local.projects, 'id'), toMap(remote.projects, 'id'), preferLocal, 2))
     .sort((x, y) => String(x.created).localeCompare(String(y.created)));
+  out.food = mergeMap(b.food, local.food, remote.food, preferLocal, 1);
   out.lifts = {};
   new Set([...Object.keys(local.lifts || {}), ...Object.keys(remote.lifts || {})]).forEach((name) => {
     const m = mergeMap(toMap(b.lifts?.[name], 'date'), toMap(local.lifts?.[name], 'date'), toMap(remote.lifts?.[name], 'date'), preferLocal, 0);

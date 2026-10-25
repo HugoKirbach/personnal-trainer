@@ -9,6 +9,7 @@ export function defaults() {
     settings: {
       sessionsPerWeek: 4,
       startDate: defaultStart(),
+      weight: 62,
       times: { midi: '12:15', soir: '18:00', weekend: '10:00' },
       sound: true,
       vibrate: true,
@@ -29,6 +30,7 @@ export function defaults() {
     pains: [],
     climbs: [],
     projects: [],
+    food: { favorites: {}, servings: {} },
     forms: {},
     slots: {},
     swaps: {},
