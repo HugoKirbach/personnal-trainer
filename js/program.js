@@ -345,6 +345,14 @@ export function sessionsOn(date, state) {
   return weekSessions(mondayOf(date), state).filter((s) => s.date === ymd(date));
 }
 
+// Semaine affichée par défaut dans le planning : la suivante quand toutes les séances de la semaine sont passées (le dimanche, en général).
+export function planningMonday(today, state) {
+  const monday = mondayOf(today);
+  if (weekSessions(monday, state).some((s) => s.date >= ymd(today))) return monday;
+  monday.setDate(monday.getDate() + 7);
+  return monday;
+}
+
 // Choisit la variante réelle d'une séance selon les accès en salle et le mode express.
 export function resolveKey(key, state, express = false) {
   const type = TEMPLATES[key].type;

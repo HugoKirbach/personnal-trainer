@@ -1,6 +1,6 @@
 import {
   BENCH_TESTS, BLOCKS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
-  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
+  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, planningMonday, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
   SCALE, blockAt, goalGrade, goalLabel, gradeTag, gymOf, levelGrade, nearestLevel, recentMax, seasonPlans, seasonStatus, statGrade, weekInfo, weekSessions, withLevels, ymd,
 } from './program.js';
 import {
@@ -437,7 +437,7 @@ function renderToday() {
   if (!list.length) {
     const next = nextSession(now);
     html += `<section class="card rest"><h2>Jour de repos</h2><p>Récupère bien : marche, mobilité douce de la nuque et du dos, hydratation.</p>
-      ${next ? `<p class="muted">Prochaine séance : <strong>${esc(next.title)}</strong>, ${parseYmd(next.date).toLocaleDateString('fr-FR', { weekday: 'long' })} à ${next.time}.</p>` : ''}
+      ${next ? `<p class="muted">Prochaine séance : <strong>${esc(next.title)}</strong>, ${parseYmd(next.date).toLocaleDateString('fr-FR', { weekday: 'long' })}${next.slot === 'weekend' ? '' : ` ${next.slot}`} à ${next.time}.</p>` : ''}
       <p class="tip">💡 ${esc(tipFor('general'))}</p></section>`;
   }
   html += mealCard(today);
@@ -877,7 +877,7 @@ function submitLog(form) {
 
 // ---------- Semaine ----------
 function renderWeek() {
-  const monday = mondayOf(new Date());
+  const monday = planningMonday(new Date(), state);
   monday.setDate(monday.getDate() + weekOffset * 7);
   if (openSession) {
     const s = weekSessions(mondayOf(parseYmd(openSession.date)), state).find((x) => x.index === openSession.index);
@@ -907,7 +907,7 @@ function renderWeek() {
               <span class="muted small">${slotLabel(s.slot)} ${s.time} · ${s.duration}${log ? ` · ✓ ${feelLabel(log.feeling)}` : ''}</span>
               <label class="small move">Déplacer au <select data-move="${s.index}" data-monday="${ymd(monday)}">
                 ${DAYS.map((n, k) => `<option value="${k}" ${k === d ? 'selected' : ''}>${n.toLowerCase()}</option>`).join('')}
-              </select>${s.slot === 'weekend' ? '' : ` <select data-slotsel="${s.date}#${s.index}" aria-label="Créneau">${['midi', 'soir'].map((k) => `<option value="${k}" ${s.slot === k ? 'selected' : ''}>${k === 'midi' ? 'le midi' : 'le soir'}</option>`).join('')}</select>`}</label></div>`;
+              </select>${s.slot === 'weekend' || s.date < ymd(new Date()) ? '' : ` <select data-slotsel="${s.date}#${s.index}" aria-label="Créneau">${['midi', 'soir'].map((k) => `<option value="${k}" ${s.slot === k ? 'selected' : ''}>${k === 'midi' ? 'le midi' : 'le soir'}</option>`).join('')}</select>`}</label></div>`;
           }).join('') : '<span class="muted small">Repos</span>'}</div></li>`;
       }).join('')}
     </ul>

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade, planningMonday } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -459,6 +459,17 @@ test('une séance de semaine passe du midi au soir pour ce jour-là seulement', 
   assert.equal(weekSessions(parseYmd('2026-11-02'), st)[0].slot, 'midi');
   setSlot(st, `${first.date}#0`, 'midi');
   assert.deepEqual(st.slots, {});
+});
+
+test('le planning s\'ouvre sur la semaine suivante quand toutes les séances sont passées', () => {
+  const st = baseState();
+  // 4 séances : lundi, mercredi, vendredi, samedi
+  assert.equal(ymd(planningMonday(parseYmd('2026-10-28'), st)), '2026-10-26');
+  assert.equal(ymd(planningMonday(parseYmd('2026-10-31'), st)), '2026-10-26');
+  assert.equal(ymd(planningMonday(parseYmd('2026-11-01'), st)), '2026-11-02');
+  // la séance du samedi déplacée au dimanche : on reste sur la semaine en cours
+  st.moves = { '2026-10-26': { 3: 6 } };
+  assert.equal(ymd(planningMonday(parseYmd('2026-11-01'), st)), '2026-10-26');
 });
 
 test('remplacer un exercice : alternatives du lieu, pour un jour ou pour toujours', async () => {
