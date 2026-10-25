@@ -211,8 +211,9 @@ try {
   check(await page.isVisible('#sheet'), 'fiche tuto ouverte');
   check((await page.getAttribute('#sheet .video', 'href')).includes('youtube.com/results'), 'lien vers les vidéos');
   await shot('1b-tuto');
-  await page.click('.sheet-close');
-  check(!(await page.isVisible('#sheet')), 'fiche tuto fermée');
+  await page.goBack();
+  await page.waitForSelector('#sheet', { state: 'hidden' });
+  check(await page.isVisible(`${PLAN} [data-guided]`), 'geste retour : fiche tuto fermée, séance toujours affichée');
 
   // Séance guidée : décompte, puis enchaînement automatique.
   await page.click(`${PLAN} [data-guided]`);
@@ -267,7 +268,15 @@ try {
   check((await page.textContent('.recipe-head')).includes('3 portions'), 'portions ajustées');
   check((await page.textContent('[data-cart-toggle]')).includes('Dans la liste'), 'recette cochée rappelée sur la fiche');
   await shot('3b-recette');
-  await page.click('[data-recipe-close]');
+  await page.click('.recipe-nav [data-recipe-step] >> nth=1');
+  check((await page.textContent('#main h1')).includes('Bo bun'), 'flèche : plat suivant');
+  await page.click('.recipe-nav [data-recipe-step] >> nth=0');
+  check((await page.textContent('#main h1')).includes('Bulgogi'), 'flèche : plat précédent');
+  await page.goBack();
+  await page.waitForSelector('.cart-bar');
+  check(!(await page.isVisible('.recipe-nav')), 'geste retour : de la fiche à la liste');
+  await page.click('[data-fav="chili"]');
+  check(await page.isVisible('[data-fav="chili"].on'), 'favori ajouté depuis la liste');
   await page.click('.cart-bar');
   const shop = await page.textContent('#main');
   check(shop.includes('450 g bœuf émincé'), 'courses pour 3 portions de bulgogi');

@@ -123,7 +123,8 @@ function startGuided(id) {
   requestWake();
 }
 
-function quitGuided() {
+// Retour à la séance (Aujourd'hui ou Semaine), à la place de la séance guidée dans l'historique.
+function quitGuided(fromBack = false) {
   guided?.stop();
   stopSpeaking();
   releaseWake();
@@ -131,9 +132,10 @@ function quitGuided() {
   guided = null;
   guidedId = null;
   const [date, idx] = id.split('#');
-  if (date === ymd(new Date()) || Number.isNaN(Number(idx))) return go('today');
-  view = 'week';
-  openSession = { date, index: Number(idx) };
+  const target = date === ymd(new Date()) || Number.isNaN(Number(idx)) ? { view: 'today', openSession: null } : { view: 'week', openSession: { date, index: Number(idx) } };
+  replaceNav = true;
+  if (!fromBack) return backTo(target);
+  ({ view, openSession } = target);
   render();
   window.scrollTo(0, 0);
 }
@@ -153,8 +155,10 @@ function openGuide(ids) {
     </section>`).join(''));
 }
 
+// Une fiche ouverte a son entrée dans l'historique : le geste retour la ferme.
 function openSheet(html) {
   $('#sheet-body').innerHTML = html;
+  if ($('#sheet').hidden) history.pushState({ nav: navState(), prev: history.state?.prev || null, sheet: true }, '');
   $('#sheet').hidden = false;
   $('#sheet .sheet-card').scrollTop = 0;
 }
@@ -168,6 +172,11 @@ function liftLine(e, date) {
   if (today.some(Boolean)) return `<span class="ex-lift done">✓ Noté : ${formatSets({ sets: today })}</span>`;
   if (!l.last) return `<span class="ex-lift">📒 Première fois : note tes séries pour suivre ta progression</span>`;
   return `<span class="ex-lift">📒 Dernière fois : ${formatSets(l.last)} → objectif <strong>${targetText(l.target)}</strong></span>`;
+}
+
+function closeSheet() {
+  $('#sheet').hidden = true;
+  if (history.state?.sheet && !skipPop) { skipPop = true; history.back(); }
 }
 
 function openLiftSheet(id, i) {
@@ -355,7 +364,64 @@ function render() {
   liftStep = null;
   if (view === 'guided') paintGuided();
   if (view === 'today' || view === 'stats') fillPhotos(main);
+  syncHistory();
 }
+
+// ---------- Historique : le geste retour du téléphone revient à l'écran précédent ----------
+// Chaque écran (onglet, recette, onglet de l'alimentation, séance ouverte) est une entrée de l'historique,
+// avec la position de défilement pour y revenir au même endroit.
+let replaceNav = false; // vrai pour passer d'une recette à l'autre sans empiler l'historique
+let backArmed = false;
+let skipPop = false; // retour en cours après la fermeture d'une fiche
+const navState = () => ({ view, foodTab, openRecipe, openSession });
+const sameNav = (a, b) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+function syncHistory() {
+  if (skipPop) return; // repris une fois le retour de la fiche traité
+  const nav = navState();
+  const cur = history.state;
+  const replace = replaceNav || !cur?.nav;
+  replaceNav = false;
+  if (sameNav(cur?.nav, nav)) return;
+  if (replace) return history.replaceState({ nav, prev: cur?.prev || null }, '');
+  history.replaceState({ ...cur, y: window.scrollY }, '');
+  history.pushState({ nav, prev: cur.nav }, '');
+}
+
+// Retour vers un écran : par l'historique quand c'est l'écran précédent, pour que le geste retour reste cohérent.
+function backTo(patch) {
+  const target = { ...navState(), ...patch };
+  if (sameNav(history.state?.prev, target)) return history.back();
+  ({ view, foodTab, openRecipe, openSession } = target);
+  render();
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener('popstate', (e) => {
+  // Retour lancé par la fermeture d'une fiche : rien à changer.
+  if (skipPop) { skipPop = false; return syncHistory(); }
+  // Une fiche ouverte : le geste retour la ferme et on reste sur l'écran.
+  if (!$('#sheet').hidden) {
+    $('#sheet').hidden = true;
+    return;
+  }
+  // Séance guidée en cours : un second geste retour, dans les 3 s, pour la quitter.
+  if (view === 'guided' && guided && !guided.done && !backArmed) {
+    backArmed = true;
+    setTimeout(() => { backArmed = false; }, 3000);
+    history.pushState({ nav: navState(), prev: e.state?.nav || null }, '');
+    return toast('Refais le geste retour pour quitter la séance guidée.', 3000);
+  }
+  if (view === 'guided' && guided) { backArmed = false; return quitGuided(true); }
+  const nav = e.state?.nav;
+  if (!nav) return;
+  ({ view, foodTab, openRecipe, openSession } = nav);
+  if (view === 'guided' && !guided) view = 'today';
+  replaceNav = true;
+  render();
+  window.scrollTo(0, e.state.y || 0);
+});
 
 // ---------- Aujourd'hui ----------
 function renderToday() {
@@ -634,7 +700,7 @@ async function submitProject(f, fd) {
   if (photo?.size) {
     try { await savePhoto(p.id, photo); } catch { toast('Photo non enregistrée sur ce téléphone.'); }
   }
-  $('#sheet').hidden = true;
+  closeSheet();
   render();
   toast(f.dataset.id ? 'Projet modifié.' : `Projet ajouté : ${p.name}. Bonne chasse ! 🎯`, 2500);
 }
@@ -1055,8 +1121,8 @@ function foodRecipes() {
         <label class="cart-check"><input type="checkbox" data-cart="${r.id}" ${cart[r.id] ? 'checked' : ''} aria-label="Cocher ${esc(r.name.split(',')[0])} pour les courses"></label>
         <button class="recipe-item" data-recipe="${r.id}">
           <span class="recipe-name"><strong>${esc(r.name)}</strong><span class="small muted">${esc(r.cuisine)} · ${recipeMeta(r)}${r.freezer ? ' · se congèle' : ''}</span></span>
-          ${fav[r.id] ? '<span class="fav-mark" aria-label="Favori">★</span>' : ''}
-        </button></li>`).join('')}</ul></section>` : '';
+        </button>
+        <button class="fav-star${fav[r.id] ? ' on' : ''}" data-fav="${r.id}" aria-pressed="${!!fav[r.id]}" aria-label="${fav[r.id] ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${fav[r.id] ? '★' : '☆'}</button></li>`).join('')}</ul></section>` : '';
     }).join('')}
     ${ticked ? `<button class="cart-bar primary" data-food-tab="shop">🛒 ${ticked} recette${ticked > 1 ? 's cochées' : ' cochée'} · voir la liste</button>`
       : '<p class="small muted center">Coche les recettes que tu veux cuisiner : la liste de courses se fait toute seule.</p>'}`;
@@ -1118,6 +1184,13 @@ function foodShop() {
     <div class="row-btns"><button data-shop-clear>Tout décocher</button><button data-shop-reset>Vider la liste</button></div>`;
 }
 
+// Plats (ou collations) voisins dans la liste affichée, avec son filtre ; toute la liste si la recette n'y est pas.
+function recipeNeighbors(r) {
+  const shown = filterRecipes(RECIPES, foodFilter, r.meal, foodState().favorites);
+  const list = shown.some((x) => x.id === r.id) ? shown : RECIPES.filter((x) => x.meal === r.meal);
+  return { list, i: list.findIndex((x) => x.id === r.id) };
+}
+
 function recipeView(r) {
   const fs = foodState();
   const servings = fs.servings[r.id] || r.servings;
@@ -1126,7 +1199,13 @@ function recipeView(r) {
   const keeps = [r.fridge ? `${plural(r.fridge, 'jour')} au frigo` : '', r.freezer ? 'se congèle (2 mois)' : ''].filter(Boolean).join(', ');
   const tonight = fs.plan[ymd(new Date())]?.soir === r.id;
   const inCart = !!fs.cart[r.id];
-  return `<button class="link back-link" data-recipe-close>← Toutes les recettes</button>
+  const { list, i } = recipeNeighbors(r);
+  const at = (k) => list[(i + k + list.length) % list.length];
+  return `<div class="recipe-nav">
+      <button class="icon-btn" data-recipe-step="${at(-1).id}" aria-label="${r.meal === 'plat' ? 'Plat' : 'Collation'} précédent${r.meal === 'plat' ? '' : 'e'} : ${esc(at(-1).name.split(',')[0])}">‹</button>
+      <div><button class="link" data-recipe-close>← Toutes les recettes</button><span class="small muted">${r.meal === 'plat' ? 'Plat' : 'Collation'} ${i + 1} sur ${list.length}</span></div>
+      <button class="icon-btn" data-recipe-step="${at(1).id}" aria-label="${r.meal === 'plat' ? 'Plat' : 'Collation'} suivant${r.meal === 'plat' ? '' : 'e'} : ${esc(at(1).name.split(',')[0])}">›</button>
+    </div>
     <h1>${esc(r.name)}</h1>
     <p class="small muted">${esc(r.cuisine)} · ${formatMinutes(r.prep)} de préparation${r.cook ? ` · ${formatMinutes(r.cook)} de cuisson` : ''}${r.marinate ? ` · ${formatMinutes(r.marinate)} de marinade` : ''} · ${r.tools.length ? r.tools.map((t) => TOOLS[t]).join(', ') : 'sans cuisson'}</p>
     <div class="tiles macro-tiles">
@@ -1423,7 +1502,7 @@ document.addEventListener('click', async (e) => {
   if (d.go) return go(d.go);
   if (d.timer) return loadTimer(JSON.parse(d.timer));
   if (d.info !== undefined && d.info) return openGuide(d.info);
-  if (d.action === 'close-sheet') { $('#sheet').hidden = true; return; }
+  if (d.action === 'close-sheet') { closeSheet(); return; }
   if (d.guided) return startGuided(d.guided);
   if (d.benchEdit) { editBench = d.benchEdit; refOpen = true; return render(); }
   if (d.action === 'resume-guided') return go('guided');
@@ -1482,7 +1561,7 @@ document.addEventListener('click', async (e) => {
     const s = findSession(id);
     const from = s.exercises[Number(i)].swap.from;
     setSwap(state, s.date, from, d.to, !!d.always);
-    $('#sheet').hidden = true;
+    closeSheet();
     persist(); render();
     return toast(d.to === from ? `Retour à ${esc(from)}.` : `${esc(d.to)} à la place de ${esc(from)}${d.always ? ', dans toutes tes séances' : ', aujourd\'hui'}.`, 3000);
   }
@@ -1516,7 +1595,8 @@ document.addEventListener('click', async (e) => {
   if (d.foodTab) { foodTab = d.foodTab; openRecipe = null; render(); return window.scrollTo(0, 0); }
   if (d.foodWeek) { foodWeek += Number(d.foodWeek); return render(); }
   if (d.recipe) { openRecipe = d.recipe; if (d.goFood !== undefined) view = 'food'; render(); return window.scrollTo(0, 0); }
-  if (d.recipeClose !== undefined) { openRecipe = null; return render(); }
+  if (d.recipeClose !== undefined) return backTo({ openRecipe: null });
+  if (d.recipeStep) { openRecipe = d.recipeStep; replaceNav = true; render(); return window.scrollTo(0, 0); }
   if (d.servings) {
     const [id, delta] = d.servings.split('|');
     const fs = foodState();
@@ -1602,7 +1682,7 @@ document.addEventListener('click', async (e) => {
     }
     removeProject(state, d.pdel);
     deletePhoto(d.pdel);
-    $('#sheet').hidden = true;
+    closeSheet();
     persist(); render();
     return toast('Projet supprimé.', 2000);
   }
@@ -1614,7 +1694,7 @@ document.addEventListener('click', async (e) => {
   }
   if (d.week) { weekOffset += Number(d.week); return render(); }
   if (d.open) { const [date, idx] = d.open.split('#'); openSession = { date, index: Number(idx) }; render(); return window.scrollTo(0, 0); }
-  if (d.action === 'close-session') { openSession = null; return render(); }
+  if (d.action === 'close-session') return backTo({ openSession: null });
   if (d.unlog) {
     const log = state.logs.find((l) => l.id === d.unlog);
     state.logs = state.logs.filter((l) => l.id !== d.unlog);
@@ -1762,7 +1842,7 @@ document.addEventListener('submit', (e) => {
       list.add(i);
       state.checks[f.dataset.id] = [...list];
     }
-    $('#sheet').hidden = true;
+    closeSheet();
     persist(); render();
     if (!done.length) return toast('Séries effacées.');
     const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done });
@@ -1778,7 +1858,7 @@ document.addEventListener('submit', (e) => {
     if (!(value > 0)) return toast('Note un résultat, ou appuie sur « Plus tard ».');
     const t = BENCH_TESTS.find((b) => b.key === f.dataset.key);
     recordBench(state, f.dataset.date, t.key, value);
-    $('#sheet').hidden = true;
+    closeSheet();
     persist();
     if (view !== 'guided' || guided?.done) render();
     return toast(`${t.label} : ${value} ${UNIT_SHORT[t.unit]} enregistré 📏`, 2500);
@@ -1917,7 +1997,7 @@ function applyGyms(fd) {
   state.projects = (state.projects || []).map(regrade);
 }
 
-$('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') e.currentTarget.hidden = true; });
+$('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
 
 // ---------- Démarrage ----------
 bindTooltips(document.body);

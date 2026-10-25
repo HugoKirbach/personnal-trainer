@@ -413,8 +413,11 @@ fieldset.gym { border: 1px solid var(--line); border-radius: 12px; padding: 10px
 .recipe-list li + li { border-top: 1px solid var(--line); }
 button.recipe-item { background: none; border: 0; padding: 10px 0; min-height: 0; width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; justify-content: flex-start; }
 .recipe-name { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.fav-mark { color: var(--primary); font-size: 1.1rem; }
-.back-link { margin-bottom: 8px; }
+.fav-star { background: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; flex: none; font-size: 1.35rem; color: var(--muted); }
+.fav-star.on { color: var(--primary); }
+.recipe-nav { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; margin: 0 -4px 4px; }
+.recipe-nav > div { display: grid; justify-items: center; gap: 2px; text-align: center; }
+.recipe-nav .icon-btn { min-height: 44px; border-radius: 99px; font-size: 1.5rem; line-height: 1; padding: 0 0 3px; }
 .macro-tiles { grid-template-columns: repeat(4, 1fr); margin-bottom: 2px; }
 .macro-tiles .big-num { font-size: 1.25rem; }
 .recipe-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
