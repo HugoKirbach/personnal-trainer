@@ -1,6 +1,6 @@
 import {
   BENCH_TESTS, BLOCKS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
-  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, parseYmd, planningMonday, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
+  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, moveSession, parseYmd, planningMonday, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
   SCALE, blockAt, goalGrade, goalLabel, gradeTag, gymOf, levelGrade, nearestLevel, recentMax, seasonPlans, seasonStatus, statGrade, weekInfo, weekSessions, withLevels, ymd,
 } from './program.js';
 import {
@@ -437,7 +437,7 @@ function renderToday() {
   if (!list.length) {
     const next = nextSession(now);
     html += `<section class="card rest"><h2>Jour de repos</h2><p>Récupère bien : marche, mobilité douce de la nuque et du dos, hydratation.</p>
-      ${next ? `<p class="muted">Prochaine séance : <strong>${esc(next.title)}</strong>, ${parseYmd(next.date).toLocaleDateString('fr-FR', { weekday: 'long' })}${next.slot === 'weekend' ? '' : ` ${next.slot}`} à ${next.time}.</p>` : ''}
+      ${next ? `<p class="next-session">Prochaine séance le <strong>${nextDayLabel(next.date, today)} à ${next.time}</strong> : ${esc(next.title)}.</p>` : ''}
       <p class="tip">💡 ${esc(tipFor('general'))}</p></section>`;
   }
   html += mealCard(today);
@@ -724,6 +724,14 @@ async function submitProject(f, fd) {
   closeSheet();
   render();
   toast(f.dataset.id ? 'Projet modifié.' : `Projet ajouté : ${p.name}. Bonne chasse ! 🎯`, 2500);
+}
+
+// « lundi 26 octobre (demain) » : jour et date de la prochaine séance du planning.
+function nextDayLabel(date, today) {
+  const d = parseYmd(date);
+  const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const t = parseYmd(today);
+  return ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1)) === date ? `${label} (demain)` : label;
 }
 
 function nextSession(from) {
@@ -1840,8 +1848,7 @@ document.addEventListener('change', (e) => {
     persist(); return render();
   }
   if (t.dataset.move) {
-    const wk = (state.moves[t.dataset.monday] ||= {});
-    wk[t.dataset.move] = Number(t.value);
+    moveSession(state, t.dataset.monday, Number(t.dataset.move), Number(t.value));
     persist(); return render();
   }
   if (t.dataset.action === 'import' && t.files[0]) {

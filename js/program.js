@@ -341,6 +341,22 @@ export function setSlot(state, id, slot) {
   return date;
 }
 
+// Déplace une séance dans sa semaine : son créneau, son mode express et son temps dispo la suivent.
+export function moveSession(state, monday, index, day) {
+  const from = weekSessions(parseYmd(monday), state).find((s) => s.index === index);
+  state.moves = { ...(state.moves || {}), [monday]: { ...(state.moves?.[monday] || {}), [index]: day } };
+  if (!from || from.day === day) return;
+  const to = new Date(parseYmd(monday)); to.setDate(to.getDate() + day);
+  const oldId = `${from.date}#${index}`;
+  const newId = `${ymd(to)}#${index}`;
+  for (const k of ['slots', 'express', 'durations']) {
+    const map = { ...(state[k] || {}) };
+    if (oldId in map) map[newId] = map[oldId]; else delete map[newId];
+    delete map[oldId];
+    state[k] = map;
+  }
+}
+
 export function sessionsOn(date, state) {
   return weekSessions(mondayOf(date), state).filter((s) => s.date === ymd(date));
 }

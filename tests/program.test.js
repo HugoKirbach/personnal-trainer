@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade, planningMonday } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade, planningMonday, moveSession } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -459,6 +459,24 @@ test('une séance de semaine passe du midi au soir pour ce jour-là seulement', 
   assert.equal(weekSessions(parseYmd('2026-11-02'), st)[0].slot, 'midi');
   setSlot(st, `${first.date}#0`, 'midi');
   assert.deepEqual(st.slots, {});
+});
+
+test('une séance déplacée garde son créneau, son mode express et son temps dispo', () => {
+  const st = baseState();
+  setSlot(st, '2026-10-26#0', 'soir');
+  st.express = { '2026-10-26#0': true };
+  st.durations = { '2026-10-26#0': 30 };
+  moveSession(st, '2026-10-26', 0, 1);
+  const s = weekSessions(parseYmd('2026-10-26'), st)[0];
+  assert.equal(s.date, '2026-10-27');
+  assert.equal(s.slot, 'soir');
+  assert.equal(s.time, '18:00');
+  assert.deepEqual(st.slots, { '2026-10-27#0': 'soir' });
+  assert.deepEqual(st.express, { '2026-10-27#0': true });
+  assert.deepEqual(st.durations, { '2026-10-27#0': 30 });
+  moveSession(st, '2026-10-26', 0, 0);
+  assert.equal(weekSessions(parseYmd('2026-10-26'), st)[0].slot, 'soir');
+  assert.deepEqual(st.slots, { '2026-10-26#0': 'soir' });
 });
 
 test('le planning s\'ouvre sur la semaine suivante quand toutes les séances sont passées', () => {
