@@ -12,8 +12,12 @@ import {
 } from './cloud.js';
 import { Timer, PRESETS, fmt, unlockAudio } from './timer.js';
 import {
-  CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, seasonChart, bindTooltips,
+  CLIMB_STYLES, weeklyBars, feelingDots, gradeLine, climbChart, climbPyramid, projectChart, seasonChart, bindTooltips,
 } from './charts.js';
+import {
+  HIGHS, MAX_ACTIVE, PROJECT_STATUS, TRIES_PER_SESSION, activeProjects, addProject, logTry, projectStats, removeProject, sendProject, setProjectStatus, suggestGrade,
+} from './projects.js';
+import { deletePhoto, fillPhotos, savePhoto } from './photos.js';
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
 import { GUIDES, videoUrl } from './guides.js';
@@ -342,6 +346,7 @@ function render() {
   if (view === 'settings') cloudDrawn = cloudShape(cloudStatus());
   liftStep = null;
   if (view === 'guided') paintGuided();
+  if (view === 'today' || view === 'stats') fillPhotos(main);
 }
 
 // ---------- Aujourd'hui ----------
@@ -382,7 +387,7 @@ function renderToday() {
       ${sessionCard(abs)}
     </details>`;
   if (!due.due) html += refBlock;
-  if (!list.some((s) => s.type === 'escalade' && !s.home)) html += `<section class="card">${climbLogger(today, 'Grimpé hors programme ? Note tes voies et blocs ici.')}</section>`;
+  if (!list.some((s) => s.type === 'escalade' && !s.home)) html += `<section class="card">${climbLogger(today, 'Grimpé hors programme ? Note tes voies et blocs ici.')}${projectPanel(today)}</section>`;
   if (!hurting) html += painCard(today);
   html += `<details class="card"><summary>Noter une séance hors programme</summary>
     <form data-form="extra" class="stack">
@@ -454,7 +459,7 @@ function climbLogger(date, intro = 'Note chaque voie ou bloc au fil de la séanc
   return `<details class="climbs" ${list.length || lastClimb.open === date ? 'open' : ''}>
       <summary>🧗 Carnet d'escalade${list.length ? ` <span class="muted small">· ${sends} enchaînée${sends > 1 ? 's' : ''} sur ${list.length}</span>` : ''}</summary>
       ${list.length ? `<ul class="climb-list">${list.map((c) => `<li><span class="grade-tag${c.kind === 'bloc' ? ' bloc' : ''}">${c.grade}</span>
-        <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}</span>
+        <span>${c.kind === 'voie' ? 'Voie' : 'Bloc'} · ${CLIMB_STYLES[c.style]}${c.project ? ' · 🎯 projet' : ''}</span>
         <button class="link" data-climb-del="${c.id}" aria-label="Retirer">✕</button></li>`).join('')}</ul>` : `<p class="small muted">${intro}</p>`}
       <form data-form="climb" data-date="${date}" class="stack climb-form">
         <div class="climb-row">
@@ -465,6 +470,128 @@ function climbLogger(date, intro = 'Note chaque voie ou bloc au fil de la séanc
         <button>+ Ajouter</button>
       </form>
     </details>`;
+}
+
+// ---------- Projets ----------
+const kindLabel = (k) => (k === 'voie' ? 'Voie' : 'Bloc');
+const highLabel = (v) => (v >= 100 ? 'sommet' : (HIGHS.find((h) => h.value === v)?.label ?? `${v} %`).toLowerCase());
+const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+
+function projectProgress(p, st = projectStats(p)) {
+  if (p.status === 'enchaine') return `enchaîné le ${shortDate(p.sent)}, ${plural(st.tries, 'essai')} sur ${plural(st.sessions, 'séance')}`;
+  if (!st.sessions) return 'pas encore essayé';
+  return `${plural(st.sessions, 'séance')}, ${plural(st.tries, 'essai')}${st.best ? `, point haut : ${highLabel(st.best)}` : ''}`;
+}
+
+const projectSummary = (p) => [kindLabel(p.kind), p.place && esc(p.place), projectProgress(p)].filter(Boolean).join(' · ');
+
+function projectHead(p) {
+  return `<button class="project-head" data-project="${p.id}">
+      <span class="photo thumb" hidden><img data-photo="${p.id}" alt=""></span>
+      <span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${p.grade}</span>
+      <span class="project-name"><strong>${esc(p.name)}</strong><span class="small muted">${projectSummary(p)}</span></span>
+    </button>`;
+}
+
+// Dans la séance : essais du jour, point haut, enchaînement.
+function projectPanel(date, kind = null) {
+  const active = activeProjects(state).sort((a, b) => (b.kind === kind) - (a.kind === kind));
+  const sentToday = (state.projects || []).filter((p) => p.sent === date);
+  return `<details class="projects" ${active.length || sentToday.length ? 'open' : ''}>
+      <summary>🎯 Projets${active.length ? ` <span class="muted small">· ${active.length} en cours</span>` : ''}</summary>
+      ${sentToday.map((p) => `<p class="small sent-line">🎉 ${esc(p.name)} (${p.grade}) enchaîné aujourd'hui !</p>`).join('')}
+      ${active.length ? `<ul class="project-list">${active.map((p) => {
+        const day = p.log?.[date] || {};
+        const tries = day.tries || 0;
+        return `<li>${projectHead(p)}
+          <div class="project-today">
+            <div class="try-count"><button data-ptry="${p.id}|${date}|-1" aria-label="Un essai de moins" ${tries ? '' : 'disabled'}>−</button><span><strong>${tries}</strong> essai${tries > 1 ? 's' : ''}</span><button data-ptry="${p.id}|${date}|1" aria-label="Un essai de plus">+1</button></div>
+            <select data-phigh="${p.id}|${date}" aria-label="Point haut aujourd'hui"><option value="">Point haut…</option>${HIGHS.map((h) => `<option value="${h.value}" ${day.high === h.value ? 'selected' : ''}>${h.label}</option>`).join('')}</select>
+            <button class="primary" data-psend="${p.id}|${date}">Enchaîné !</button>
+          </div>
+          ${tries >= TRIES_PER_SESSION ? `<p class="small muted">${tries} essais : garde de la fraîcheur pour la prochaine séance, la qualité des essais compte plus que leur nombre.</p>` : ''}
+        </li>`;
+      }).join('')}</ul>` : `<p class="small muted">Une ${kind === 'voie' ? 'voie' : 'voie ou un bloc'} à ta limite, travaillé${kind === 'voie' ? 'e' : ''} sur plusieurs séances : note tes essais et ton point haut jusqu'à l'enchaînement.</p>`}
+      ${active.length > MAX_ACTIVE ? `<p class="small muted">Plus de ${MAX_ACTIVE} projets en cours : concentre-toi sur deux ou trois et mets les autres de côté.</p>` : ''}
+      <button data-project-new="${kind || 'bloc'}">+ Nouveau projet</button>
+    </details>`;
+}
+
+// Dans Suivi : en cours, enchaînés, mis de côté.
+function projectsCard() {
+  const all = state.projects || [];
+  const active = activeProjects(state);
+  const sent = all.filter((p) => p.status === 'enchaine').sort((a, b) => b.sent.localeCompare(a.sent));
+  const parked = all.filter((p) => p.status === 'abandonne');
+  const list = (ps) => `<ul class="project-list">${ps.map((p) => `<li>${projectHead(p)}</li>`).join('')}</ul>`;
+  return `<section class="card projects-card"><h2>🎯 Projets</h2>
+      ${active.length ? list(active) : '<p class="small muted">Aucun projet en cours. Choisis une voie ou un bloc une cotation au-dessus de ton max, et note tes essais séance après séance.</p>'}
+      ${sent.length ? `<h3>Enchaînés</h3>${list(sent)}` : ''}
+      ${parked.length ? `<details><summary class="small">Mis de côté (${parked.length})</summary>${list(parked)}</details>` : ''}
+      <button data-project-new="bloc">+ Nouveau projet</button>
+    </section>`;
+}
+
+function openProjectSheet(id) {
+  const p = (state.projects || []).find((x) => x.id === id);
+  if (!p) return;
+  const st = projectStats(p);
+  const status = {
+    actif: `<button data-pstatus="${p.id}|abandonne">Mettre de côté</button>`,
+    abandonne: `<button data-pstatus="${p.id}|actif">Reprendre</button>`,
+    enchaine: `<button data-pstatus="${p.id}|actif">Annuler l'enchaînement</button>`,
+  }[p.status];
+  openSheet(`<div class="stack project-sheet">
+      <figure class="photo big" hidden><img data-photo="${p.id}" alt="Photo du projet"></figure>
+      <h2><span class="grade-tag${p.kind === 'bloc' ? ' bloc' : ''}">${p.grade}</span> ${esc(p.name)}</h2>
+      <p class="small muted">${[kindLabel(p.kind), p.place && esc(p.place), `depuis le ${shortDate(p.created)}`, PROJECT_STATUS[p.status].toLowerCase()].filter(Boolean).join(' · ')}</p>
+      ${p.notes ? `<p class="small project-notes">${esc(p.notes)}</p>` : ''}
+      <p class="small">${projectProgress(p, st)[0].toUpperCase()}${projectProgress(p, st).slice(1)}.</p>
+      ${st.sessions ? projectChart(p) : ''}
+      <div class="row-btns"><button data-project-edit="${p.id}">Modifier</button>${status}</div>
+      <button class="link danger-link" data-pdel="${p.id}">Supprimer le projet</button>
+    </div>`);
+  fillPhotos($('#sheet-body'));
+}
+
+function openProjectForm(id, kind = 'bloc') {
+  const p = id ? (state.projects || []).find((x) => x.id === id) : null;
+  const k = p?.kind || kind;
+  const grade = p?.grade || suggestGrade(state, k);
+  openSheet(`<form data-form="project" data-id="${p?.id || ''}" class="stack project-form">
+      <h2>${p ? 'Modifier le projet' : 'Nouveau projet'}</h2>
+      <div class="climb-row">
+        <div class="seg">${['bloc', 'voie'].map((x) => `<label><input type="radio" name="kind" value="${x}" ${x === k ? 'checked' : ''}><span>${kindLabel(x)}</span></label>`).join('')}</div>
+        <select name="grade" aria-label="Cotation">${GRADES.map((g) => `<option ${g === grade ? 'selected' : ''}>${g}</option>`).join('')}</select>
+      </div>
+      <label>Nom <input name="name" maxlength="40" placeholder="Ex. le dévers jaune" value="${esc(p?.name || '')}"></label>
+      <label>Secteur, couleur des prises <input name="place" maxlength="60" placeholder="Ex. mur du fond, prises vertes" value="${esc(p?.place || '')}"></label>
+      <label>Notes <textarea name="notes" rows="3" maxlength="400" placeholder="Méthode, mouvement clé, pied à ne pas oublier…">${esc(p?.notes || '')}</textarea></label>
+      <label>Photo <input type="file" name="photo" accept="image/*"></label>
+      <p class="small muted">La photo reste sur ce téléphone, elle n'est pas sauvegardée en ligne.</p>
+      <button class="primary">${p ? 'Enregistrer' : 'Ajouter le projet'}</button>
+    </form>`);
+}
+
+async function submitProject(f, fd) {
+  const fields = { name: fd.get('name') || '', kind: fd.get('kind'), grade: fd.get('grade'), place: fd.get('place') || '', notes: fd.get('notes') || '' };
+  let p;
+  if (f.dataset.id) {
+    state.projects = (state.projects || []).map((x) => (x.id === f.dataset.id ? { ...x, ...fields, name: fields.name.trim() || x.name, place: fields.place.trim(), notes: fields.notes.trim() } : x));
+    p = state.projects.find((x) => x.id === f.dataset.id);
+    // Le projet enchaîné garde sa croix à jour dans le carnet d'escalade.
+    state.climbs = (state.climbs || []).map((c) => (c.project === p.id ? { ...c, kind: p.kind, grade: p.grade } : c));
+  } else {
+    p = addProject(state, fields, ymd(new Date()));
+  }
+  persist();
+  const photo = fd.get('photo');
+  if (photo?.size) {
+    try { await savePhoto(p.id, photo); } catch { toast('Photo non enregistrée sur ce téléphone.'); }
+  }
+  $('#sheet').hidden = true;
+  render();
+  toast(f.dataset.id ? 'Projet modifié.' : `Projet ajouté : ${p.name}. Bonne chasse ! 🎯`, 2500);
 }
 
 function nextSession(from) {
@@ -515,7 +642,7 @@ function sessionCard(s) {
         </span>
       </li>`).join('')}
     </ol>
-    ${s.type === 'escalade' && !s.home && !s.reference ? climbLogger(s.date) : ''}
+    ${s.type === 'escalade' && !s.home && !s.reference ? climbLogger(s.date) + projectPanel(s.date, s.key === 'voie' ? 'voie' : 'bloc') : ''}
     ${s.reference ? benchForm(s.date) : s.mobility ? routineDone(id, log) : log ? `<div class="logged">✓ Séance notée : <strong>${feelLabel(log.feeling)}</strong>${log.completed === false ? ', arrêtée avant la fin' : ''}${log.maxGrade ? `, max ${log.maxGrade}` : ''}${log.zones?.length ? `, douleur ${log.zones.map((z) => ZONES[z].toLowerCase()).join(', ')}` : ''}
         <button class="link" data-unlog="${log.id}">Modifier</button></div>`
     : `<form data-form="log" data-date="${s.date}" data-index="${s.index}" class="stack feedback">
@@ -806,6 +933,7 @@ function renderStats() {
     <section class="card"><h2>Séances par semaine</h2>${weeklyBars(training)}</section>
     <section class="card"><h2>Ressenti</h2>${feelingDots(training)}</section>
     <section class="card"><h2>Escalade</h2>${climbStats()}</section>
+    ${projectsCard()}
     <section class="card"><h2>Carnet de charges</h2>${liftTable()}</section>
     <section class="card"><h2>Intensité du programme</h2>
       <p class="muted small">100 % = programme de base. L'appli ajuste selon ton ressenti.</p>
@@ -1155,7 +1283,42 @@ document.addEventListener('click', async (e) => {
     persist(); render();
     return toast(`${ZONES[d.heal]} : exercices de nouveau proposés. Reprends en douceur.`);
   }
+  if (d.project) return openProjectSheet(d.project);
+  if (d.projectNew) return openProjectForm(null, d.projectNew);
+  if (d.projectEdit) return openProjectForm(d.projectEdit);
+  if (d.ptry) {
+    const [id, date, delta] = d.ptry.split('|');
+    logTry(state, id, date, { delta: Number(delta) });
+    persist(); return render();
+  }
+  if (d.psend) {
+    const [id, date] = d.psend.split('|');
+    const p = sendProject(state, id, date);
+    persist(); render();
+    const st = projectStats(p);
+    return toast(`🎉 ${p.name} (${p.grade}) enchaîné en ${plural(st.tries, 'essai')} sur ${plural(st.sessions, 'séance')} ! Ajouté au carnet d'escalade.`, 5000);
+  }
+  if (d.pstatus) {
+    const [id, status] = d.pstatus.split('|');
+    setProjectStatus(state, id, status);
+    persist(); render(); openProjectSheet(id);
+    return toast(status === 'abandonne' ? 'Projet mis de côté.' : 'Projet repris.', 2000);
+  }
+  if (d.pdel) {
+    if (!t.dataset.confirm) {
+      t.dataset.confirm = '1';
+      t.textContent = 'Appuie encore pour supprimer';
+      return setTimeout(() => { delete t.dataset.confirm; t.textContent = 'Supprimer le projet'; }, 4000);
+    }
+    removeProject(state, d.pdel);
+    deletePhoto(d.pdel);
+    $('#sheet').hidden = true;
+    persist(); render();
+    return toast('Projet supprimé.', 2000);
+  }
   if (d.climbDel) {
+    const linked = (state.climbs || []).find((c) => c.id === d.climbDel)?.project;
+    if (linked) setProjectStatus(state, linked, 'actif'); // la croix retirée rouvre le projet
     state.climbs = (state.climbs || []).filter((c) => c.id !== d.climbDel);
     persist(); return render();
   }
@@ -1236,6 +1399,11 @@ document.addEventListener('change', (e) => {
     persist(); render();
     return toast(t.value ? `Séance ramenée à ${t.value} min environ : l'essentiel est gardé.` : 'Séance complète rétablie.', 2500);
   }
+  if (t.dataset.phigh) {
+    const [id, date] = t.dataset.phigh.split('|');
+    logTry(state, id, date, { delta: 0, high: t.value });
+    persist(); return render();
+  }
   if (t.dataset.slotsel) {
     setSlot(state, t.dataset.slotsel, t.value);
     persist(); return render();
@@ -1263,6 +1431,7 @@ document.addEventListener('submit', (e) => {
   const fd = new FormData(f);
   const kind = f.dataset.form;
   if (kind === 'log' || kind === 'extra') return submitLog(f);
+  if (kind === 'project') return submitProject(f, fd);
   if (kind === 'form') {
     setForm(state, f.dataset.date, Object.fromEntries(FORM_QUESTIONS.map((q) => [q.key, Number(fd.get(q.key))])));
     formEdit = false;

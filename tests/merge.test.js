@@ -55,3 +55,15 @@ test('une modification locale reste plus récente que des données venues d\'un 
   save(s);
   assert.ok(s.updatedAt > before);
 });
+
+test('projets : essais notés sur deux téléphones le même jour et un autre jour', () => {
+  const p = { id: 'p1', name: 'Dévers', kind: 'bloc', grade: '6c+', created: '2026-11-01', status: 'actif', log: { '2026-11-01': { tries: 3 } } };
+  const base = state({ projects: [p] });
+  const local = state({ projects: [{ ...p, log: { ...p.log, '2026-11-03': { tries: 2, high: 50 } } }], updatedAt: 5 });
+  const remote = state({ projects: [{ ...p, notes: 'talon à gauche', log: { ...p.log, '2026-11-04': { tries: 4 } } }], updatedAt: 4 });
+  const m = mergeStates(local, remote, base);
+  assert.equal(m.projects.length, 1);
+  assert.equal(m.projects[0].notes, 'talon à gauche');
+  assert.deepEqual(Object.keys(m.projects[0].log).sort(), ['2026-11-01', '2026-11-03', '2026-11-04']);
+  assert.ok(!isPristine(state({ projects: [p] })));
+});

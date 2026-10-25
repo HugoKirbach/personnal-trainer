@@ -37,6 +37,9 @@ export function mergeStates(local, remote, base = null) {
   Object.entries(KEYED).forEach(([name, key]) => {
     out[name] = Object.values(mergeMap(toMap(b[name], key), toMap(local[name], key), toMap(remote[name], key), preferLocal, 1)).sort(byDate);
   });
+  // Projets : champ par champ, et le journal des essais date par date.
+  out.projects = Object.values(mergeMap(toMap(b.projects, 'id'), toMap(local.projects, 'id'), toMap(remote.projects, 'id'), preferLocal, 2))
+    .sort((x, y) => String(x.created).localeCompare(String(y.created)));
   out.lifts = {};
   new Set([...Object.keys(local.lifts || {}), ...Object.keys(remote.lifts || {})]).forEach((name) => {
     const m = mergeMap(toMap(b.lifts?.[name], 'date'), toMap(local.lifts?.[name], 'date'), toMap(remote.lifts?.[name], 'date'), preferLocal, 0);
@@ -58,5 +61,5 @@ export function mergeStates(local, remote, base = null) {
 
 // Aucune donnée personnelle encore saisie sur cet appareil.
 export function isPristine(s) {
-  return !s.logs?.length && !s.benchmarks?.length && !s.climbs?.length && !Object.keys(s.lifts || {}).length && !Object.keys(s.checks || {}).length;
+  return !s.logs?.length && !s.benchmarks?.length && !s.climbs?.length && !s.projects?.length && !Object.keys(s.lifts || {}).length && !Object.keys(s.checks || {}).length;
 }

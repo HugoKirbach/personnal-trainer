@@ -240,6 +240,35 @@ export function seasonChart(st, startYmd) {
   return frame(W, H, g);
 }
 
+// Projet : point haut atteint à chaque séance, essais au-dessus de la barre.
+export function projectChart(p) {
+  const days = Object.keys(p.log || {}).sort().slice(-10);
+  const W = 340, H = 120, L = 30, B = 20, T = 18;
+  const ph = H - T - B;
+  const step = (W - L) / Math.max(days.length, 4);
+  const bw = Math.min(28, step - 2);
+  const y = (v) => T + ph - (v / 100) * ph;
+  let g = '';
+  [50, 100].forEach((v) => {
+    g += `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${L - 6}" y="${y(v) + 3}" class="axis" text-anchor="end">${v === 100 ? 'Sommet' : '½'}</text>`;
+  });
+  days.forEach((d, i) => {
+    const { tries = 0, high = 0 } = p.log[d];
+    const x0 = L + i * step + (step - bw) / 2;
+    const h = Math.max(3, (high / 100) * ph);
+    const top = T + ph - h;
+    const r = Math.min(4, h / 2, bw / 2);
+    // Barre arrondie en haut seulement, posée sur la ligne de base.
+    g += `<path d="M${x0},${T + ph} V${top + r} Q${x0},${top} ${x0 + r},${top} H${x0 + bw - r} Q${x0 + bw},${top} ${x0 + bw},${top + r} V${T + ph} Z" fill="var(--series-1)"${high ? '' : ' fill-opacity="0.35"'}/>`;
+    g += `<text x="${x0 + bw / 2}" y="${top - 5}" text-anchor="middle" class="axis value">${high >= 100 ? '✓' : tries}</text>`;
+    g += `<text x="${x0 + bw / 2}" y="${H - 5}" text-anchor="middle" class="axis">${parseYmd(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' })}</text>`;
+    const tip = `<strong>${parseYmd(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</strong><br>${tries} essai${tries > 1 ? 's' : ''}${high >= 100 ? ' · enchaîné 🎉' : high ? ` · point haut ${high} %` : ''}`;
+    g += `<rect x="${L + i * step}" y="0" width="${step}" height="${H}" class="hit" data-tip="${esc(tip)}"/>`;
+  });
+  g += `<line x1="${L}" x2="${W}" y1="${T + ph}" y2="${T + ph}" class="grid"/>`;
+  return `<h3>Point haut par séance <span class="muted small">· essais au-dessus</span></h3>${frame(W, H, g)}`;
+}
+
 function empty(text) {
   return `<p class="empty">${text}</p>`;
 }

@@ -21,6 +21,7 @@ Mon appli de sport perso : programme hebdomadaire escalade, muscu et course, chr
 - **Carnet de charges** : répétitions et charge de chaque série (dans la séance guidée ou avec 📒). L'appli propose l'objectif suivant : une répétition de plus, puis +1 kg quand le haut de la fourchette est atteint.
 - **Douleurs** : signale une zone (doigts, coude, épaule, nuque, dos…) et les exercices qui la sollicitent sont retirés pendant 7 jours, jusqu'à « Ça va mieux ».
 - **Carnet d'escalade** : chaque voie ou bloc (cotation, flash, enchaîné, en travail), avec la courbe du max par semaine et la pyramide.
+- **Projets** : les voies et blocs à ta limite, travaillés sur plusieurs séances (nom, secteur, notes, photo). Dans la séance d'escalade, compte tes essais et ton point haut ; « Enchaîné ! » clôt le projet et l'ajoute au carnet. Suivi garde la liste des projets en cours et enchaînés, avec la progression séance par séance. La photo reste sur le téléphone.
 - **Tutos** : un bouton « i » par exercice ouvre les consignes, les erreurs à éviter et des vidéos de démonstration.
 - **Semaine** : le planning, avec la possibilité de déplacer une séance.
 - **Chrono** : chronomètre avec tours, minuteur de repos, intervalles (poutre, tabata, 30/30, gainage), son et vibration, écran maintenu allumé.

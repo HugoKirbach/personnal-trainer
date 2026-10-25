@@ -27,6 +27,7 @@ export function defaults() {
     lifts: {},
     pains: [],
     climbs: [],
+    projects: [],
     forms: {},
     slots: {},
     swaps: {},

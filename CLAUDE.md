@@ -11,6 +11,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - `js/voice.js` : annonces vocales (synthèse vocale du téléphone, `settings.voice`).
 - `js/lifts.js` : carnet de charges (`state.lifts`, double progression, `liftPlan` appelé par `buildSession`).
 - `js/guides.js` : fiches tuto des exercices (consignes, erreurs, recherche vidéo YouTube). Chaque `info` d'exercice doit pointer vers une fiche existante.
+- `js/projects.js` : projets de voies et blocs (`state.projects`, essais et point haut par date dans `log`, `sendProject` verse la croix au carnet d'escalade). `js/photos.js` : photos des projets dans IndexedDB, jamais synchronisées.
 - `js/app.js` : rendu des vues et événements (délégation par `data-*`).
 - `js/charts.js` : graphiques SVG faits main. `js/calendar.js` : liens Google Agenda et export .ics.
 - `js/store.js` : état dans `localStorage` (clé `personnal-trainer:v1`), `updatedAt` qui ne recule jamais.
@@ -30,6 +31,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - Carnet de charges : les exercices comptés des séances maison et muscu ont un `lift` (objectif suivant). Les charges sont décrites par `load` (`DB`, `VEST`, `GRIP`, `GYM`) et ne dépassent jamais le matériel. Le gilet et la pince sont recalés par une nouvelle prise de référence. Pas de progression en semaine de décharge.
 - Douleurs (`state.pains`) : une zone signalée retire pendant 7 jours les exercices dont la fiche la sollicite (`STRAIN` dans `program.js`, à compléter pour toute nouvelle fiche qui charge une articulation).
 - Carnet d'escalade (`state.climbs`) : voies et blocs notés en salle, cotation max préremplie dans le ressenti.
+- Projets (`state.projects`) : panneau dans les séances d'escalade en salle et sur Aujourd'hui, carte dans Suivi. Un projet enchaîné ajoute au carnet une croix liée (`climb.project`) ; retirer la croix ou annuler l'enchaînement rouvre le projet. Fusion champ par champ, journal des essais date par date (`merge.js`).
 - Parcours abdos (`abdos`, `abdosMaison`, `absSession`, index `abs`) : séance bonus à lancer quand on veut depuis Aujourd'hui, hors répartition hebdo. Pas de crunch classique à la maison (nuque).
 - Tests de la prise de référence : en séance guidée, le ✓ de chaque test ouvre la saisie du résultat (`recordBench`). Pour les tests au temps, le temps tenu jusqu'au ✓ est proposé à confirmer ou corriger.
 - État de forme (`state.forms[date]`, `formLevel`) : petite forme = une série de moins sur chaque exercice ajustable, grande forme = une série bonus sur les deux premiers exercices comptés, jamais sur ce qui sollicite les doigts (`STRAIN`) ni en semaine de décharge. Sans effet sur la prise de référence (simple conseil).

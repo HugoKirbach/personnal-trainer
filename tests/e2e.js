@@ -1,5 +1,6 @@
 // Test de bout en bout dans Chromium : parcours principal de l'appli sur un écran de téléphone.
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { serve } from './serve.js';
 import { fakeCloud } from './fakecloud.js';
@@ -140,6 +141,26 @@ try {
   check((await page.inputValue('[data-form="log"] select[name=maxGrade]')) === '6b', 'cotation max préremplie');
   await shot('1a-carnet-escalade');
 
+  // Projets : un bloc travaillé avec photo, essais, point haut, enchaînement versé au carnet.
+  await page.click(`${PLAN} .projects summary`);
+  await page.click(`${PLAN} [data-project-new]`);
+  check((await page.inputValue('#sheet select[name=grade]')) === '6c', 'cotation de projet proposée au-dessus du max');
+  await page.fill('#sheet input[name=name]', 'Le dévers jaune');
+  await page.setInputFiles('#sheet input[name=photo]', fileURLToPath(new URL('../icons/icon-192.png', import.meta.url)));
+  await page.click('#sheet button.primary');
+  await page.waitForSelector(`${PLAN} .photo.thumb:not([hidden]) img[src^="blob:"]`);
+  await page.click(`${PLAN} [data-ptry$="|1"]`);
+  await page.click(`${PLAN} [data-ptry$="|1"]`);
+  await page.selectOption(`${PLAN} [data-phigh]`, '75');
+  check((await page.textContent(`${PLAN} .projects`)).includes('2 essais, point haut : trois quarts'), 'essais et point haut du projet');
+  await shot('1b-projets');
+  await page.click(`${PLAN} [data-psend]`);
+  check((await page.textContent(`${PLAN} .climb-list`)).includes('projet'), 'projet enchaîné versé au carnet');
+  check((await page.textContent(`${PLAN} .sent-line`)).includes('Le dévers jaune'), 'enchaînement célébré');
+  await page.click(`${PLAN} .climb-list li:has-text("projet") [data-climb-del]`);
+  check((await page.textContent(`${PLAN} .projects summary`)).includes('1 en cours'), 'croix retirée : projet rouvert');
+  check((await page.inputValue('[data-form="log"] select[name=maxGrade]')) === '6b', 'cotation max inchangée');
+
   // Prise de référence : saisie des résultats et adaptation.
   check(await page.isVisible('.bench-wrap[open]'), 'prise de référence proposée');
   await page.fill('[data-form="bench"] input[name=pullups]', '8');
@@ -239,6 +260,10 @@ try {
   check((await page.textContent('.table-scroll >> nth=1')).includes('Tractions max'), 'tableau des références');
   check((await page.textContent('table.lifts')).includes('Tractions'), 'carnet de charges dans le suivi');
   check((await page.textContent('#main')).includes('Pyramide'), 'pyramide d\'escalade');
+  check((await page.textContent('.projects-card')).includes('Le dévers jaune'), 'projets dans le suivi');
+  await page.click('.projects-card [data-project]');
+  check((await page.textContent('#sheet')).includes('Point haut par séance'), 'fiche du projet avec sa progression');
+  await page.click('#sheet [data-action="close-sheet"]');
   await shot('4-suivi');
 
   // Réglages : passer à 5 séances.
