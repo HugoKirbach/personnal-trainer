@@ -284,6 +284,9 @@ try {
   check((await page.textContent('.cart-bar')).includes('3 recettes cochées'), 'recettes cochées pour les courses');
   await page.click('[data-recipe="bulgogi"]');
   check((await page.textContent('#main h1')).includes('Bulgogi'), 'fiche recette ouverte');
+  await page.waitForFunction(() => document.querySelector('.recipe-photo img')?.complete);
+  check(await page.$eval('.recipe-photo img', (i) => i.naturalWidth === 800), 'photo du plat affichée');
+  check((await page.textContent('.recipe-photo figcaption')).includes('Andy Li · CC0 · Wikimedia Commons'), 'crédit de la photo');
   await page.click('[data-servings="bulgogi|1"]');
   check((await page.textContent('.recipe-head')).includes('3 portions'), 'portions ajustées');
   check((await page.textContent('[data-cart-toggle]')).includes('Dans la liste'), 'recette cochée rappelée sur la fiche');

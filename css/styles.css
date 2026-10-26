@@ -464,3 +464,7 @@ button.recipe-item { background: none; border: 0; padding: 10px 0; min-height: 0
 .meal-card p { margin: 0; }
 .meal-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .meal-list li { display: grid; grid-template-columns: 72px 1fr; align-items: baseline; gap: 8px; }
+.recipe-photo { margin: 0 0 10px; }
+.recipe-photo img { display: block; width: 100%; height: auto; border-radius: 14px; background: var(--surface-2); }
+.recipe-photo figcaption { font-size: .72rem; color: var(--muted); margin-top: 4px; text-align: right; }
+.recipe-photo figcaption a { color: inherit; }

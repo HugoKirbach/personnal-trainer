@@ -13,6 +13,7 @@ Appli web installable (PWA) personnelle d'Hugo : programme hebdomadaire escalade
 - `js/guides.js` : fiches tuto des exercices (consignes, erreurs, recherche vidéo YouTube). Chaque `info` d'exercice doit pointer vers une fiche existante.
 - `js/projects.js` : projets de voies et blocs (`state.projects`, essais et point haut par date dans `log`, `sendProject` verse la croix au carnet d'escalade). `js/photos.js` : photos des projets dans IndexedDB, jamais synchronisées.
 - `js/recipes.js` : onglet Alimentation, recettes (données : apports par portion calculés ingrédient par ingrédient) et calculs purs (portions, liste de courses, planning des repas, idées selon la séance).
+- `img/recettes/<id>.jpg` : une photo libre de Wikimedia Commons par recette (800 × 600, JPEG léger), crédit dans `PHOTOS` (`recipes.js`) affiché sous la photo (auteur, licence, lien Commons). Vérifier chaque nouvelle photo : plat reconnaissable, sans fruits de mer, tomate crue ni coriandre visibles.
 - `js/app.js` : rendu des vues et événements (délégation par `data-*`).
 - `js/charts.js` : graphiques SVG faits main. `js/calendar.js` : liens Google Agenda et export .ics.
 - `js/store.js` : état dans `localStorage` (clé `personnal-trainer:v1`), `updatedAt` qui ne recule jamais.

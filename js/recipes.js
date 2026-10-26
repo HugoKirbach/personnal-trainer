@@ -861,3 +861,39 @@ export const RECIPES = [
     tip: 'Emballé dans du papier alu, il se transporte sans se défaire. Variante chaude : 3 min au grill-presse avec un peu d\'emmental.',
   },
 ];
+
+// Photos libres de Wikimedia Commons (img/recettes/<id>.jpg, 800 × 600) : crédit et licence affichés sous la photo.
+export const photoSrc = (id) => `img/recettes/${id}.jpg`;
+export const photoPage = (ph) => `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(ph.file.replace(/ /g, '_'))}`;
+export const PHOTOS = {
+  'bo-bun': { file: 'Bún thịt nướng tại quán Cơm tấm Cali ở Quận 4, đường Hoàng Diệu (1).jpg', author: 'Phương Huy', license: 'Public domain', licenseUrl: '' },
+  'bol-skyr': { file: 'Double choc yogurt.jpg', author: '1997SPP', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'bulgogi': { file: 'Bulgogi (Marinated beef. Served with rice) - Kogi 2023-09-11.jpg', author: 'Andy Li', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'butter-chicken': { file: 'Murgh Makhani (Butter Chicken) (8039245631).jpg', author: 'Luca Nebuloni', license: 'CC BY 2.0', licenseUrl: 'https://creativecommons.org/licenses/by/2.0' },
+  'cabillaud-panko': { file: 'Baked Cod & Lentils (39560294202).jpg', author: 'Mack Male from Edmonton, AB, Canada', license: 'CC BY-SA 2.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0' },
+  'chili': { file: 'Bowl of chili.jpg', author: 'Carstor', license: 'CC BY-SA 2.5', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.5' },
+  'croque': { file: 'Croque monsieur.jpg', author: 'Michael Brewer', license: 'CC BY-SA 2.5', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.5' },
+  'curry-vert': { file: 'Thai green chicken curry at Highgate Cricket Club, Crouch End, London 1.jpg', author: 'Acabashi', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'edamame': { file: 'Edamame by jark.jpg', author: 'jark', license: 'CC BY-SA 2.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0' },
+  'energy-balls': { file: 'Energy Balls (Unsplash).jpg', author: 'Toa Heftiba', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'goulash': { file: 'Gulyás079.jpg', author: 'Lily15', license: 'CC BY-SA 3.0', licenseUrl: 'http://creativecommons.org/licenses/by-sa/3.0/' },
+  'katsu-curry': { file: 'Katsu Curry Rice from Marugame Udon (2024-11-07).jpg', author: 'Wide Awake!', license: 'CC BY 4.0', licenseUrl: 'https://creativecommons.org/licenses/by/4.0' },
+  'khao-man-gai': { file: 'Hainanese chicken rice in Singapore.jpg', author: 'Pauloleong2002', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'lasagnes': { file: 'Spinach lasagne (3185744041).jpg', author: 'Karen and Brad Emerson', license: 'CC BY 2.0', licenseUrl: 'https://creativecommons.org/licenses/by/2.0' },
+  'mapo-tofu': { file: 'Mapo Tofu (8840681150).jpg', author: 'pelican from Tokyo, Japan', license: 'CC BY-SA 2.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0' },
+  'muffins-oeufs': { file: 'Frittata 04.jpg', author: 'Key West Wedding Photography', license: 'CC BY 2.0', licenseUrl: 'https://creativecommons.org/licenses/by/2.0' },
+  'nasi-goreng': { file: 'Vegetarian Nasi Goreng.jpg', author: 'Mx. Granger', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'oeufs-marines': { file: 'Egg @ Chicken Ramen @ Yatta ! Ramen @ Annecy-le-Vieux (39824443882).jpg', author: 'Guilhem Vellut from Annecy, France', license: 'CC BY 2.0', licenseUrl: 'https://creativecommons.org/licenses/by/2.0' },
+  'onigiri': { file: 'Onigiri 002.jpg', author: 'Ocdp', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'overnight-oats': { file: 'Protein overnight oats.jpg', author: 'Nervy8924', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'oyakodon': { file: 'Solty soup chicken and egg bowl of Nakau.jpg', author: '毒島みるく', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'paella': { file: 'Chicken, Chorizo and green beans paella, Brisbane, 2021.jpg', author: 'Kgbo', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'pancakes': { file: 'Banana on pancake.jpg', author: 'Brandon Martin-Anderson', license: 'CC BY-SA 2.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0' },
+  'piri-piri': { file: 'African Piri Piri Chicken.jpg', author: 'Valeva1010', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'quesadillas': { file: 'Chicken quesadilla - Massachusetts.jpg', author: 'Daderot', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+  'saumon-teriyaki': { file: 'Flickr - Roger T Wong - 20100130-46-Teriyaki salmon at Wagamama in Christchurch.jpg', author: 'Roger Wong from Hobart, Australia', license: 'CC BY-SA 2.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/2.0' },
+  'shawarma': { file: 'Chicken Shwarama plate.jpeg', author: 'CrunchySkies', license: 'CC BY-SA 3.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0' },
+  'tajine-kefta': { file: 'طاجن بيض ومطيش وكرات د اللحم.jpg', author: 'إيان', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'wrap-dinde': { file: 'Wegmans Chicken Caesar Wheat Wrap.jpeg', author: 'Dough4872', license: 'CC BY-SA 4.0', licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0' },
+  'yassa': { file: 'Poulet yassa 01.jpg', author: 'Arnaud 25', license: 'CC0', licenseUrl: 'http://creativecommons.org/publicdomain/zero/1.0/deed.en' },
+};

@@ -19,8 +19,8 @@ import {
 } from './projects.js';
 import { deletePhoto, fillPhotos, savePhoto } from './photos.js';
 import {
-  FILTERS, MEALS, OUTSIDE, RECIPES, SLOTS, TOOLS, cartFromPlan, cartPicks, dayTotals, fillDinners, filterRecipes, formatMinutes, formatQty, kcalTarget, planPicks, proteinTarget,
-  scaleIngredients, shoppingList, stepMinutes, stepText, suggestMeals, totalTime,
+  FILTERS, MEALS, OUTSIDE, PHOTOS, RECIPES, SLOTS, TOOLS, cartFromPlan, cartPicks, dayTotals, fillDinners, filterRecipes, formatMinutes, formatQty, kcalTarget, planPicks, proteinTarget,
+  photoPage, photoSrc, scaleIngredients, shoppingList, stepMinutes, stepText, suggestMeals, totalTime,
 } from './recipes.js';
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
@@ -1225,6 +1225,16 @@ function recipeNeighbors(r) {
   return { list, i: list.findIndex((x) => x.id === r.id) };
 }
 
+// Photo libre de Wikimedia Commons, avec le crédit demandé par sa licence.
+function recipePhoto(r) {
+  const ph = PHOTOS[r.id];
+  if (!ph) return '';
+  return `<figure class="recipe-photo">
+      <img src="${photoSrc(r.id)}" alt="${esc(r.name.split(',')[0])}" width="800" height="600" loading="lazy">
+      <figcaption>Photo : ${esc(ph.author)} · ${ph.licenseUrl ? `<a href="${esc(ph.licenseUrl)}" target="_blank" rel="noopener">${esc(ph.license)}</a>` : esc(ph.license)} · <a href="${photoPage(ph)}" target="_blank" rel="noopener">Wikimedia Commons</a></figcaption>
+    </figure>`;
+}
+
 function recipeView(r) {
   const fs = foodState();
   const servings = fs.servings[r.id] || r.servings;
@@ -1240,6 +1250,7 @@ function recipeView(r) {
       <div><button class="link" data-recipe-close>← Toutes les recettes</button><span class="small muted">${r.meal === 'plat' ? 'Plat' : 'Collation'} ${i + 1} sur ${list.length}</span></div>
       <button class="icon-btn" data-recipe-step="${at(1).id}" aria-label="${r.meal === 'plat' ? 'Plat' : 'Collation'} suivant${r.meal === 'plat' ? '' : 'e'} : ${esc(at(1).name.split(',')[0])}">›</button>
     </div>
+    ${recipePhoto(r)}
     <h1>${esc(r.name)}</h1>
     <p class="small muted">${esc(r.cuisine)} · ${formatMinutes(r.prep)} de préparation${r.cook ? ` · ${formatMinutes(r.cook)} de cuisson` : ''}${r.marinate ? ` · ${formatMinutes(r.marinate)} de marinade` : ''} · ${r.tools.length ? r.tools.map((t) => TOOLS[t]).join(', ') : 'sans cuisson'}</p>
     <div class="tiles macro-tiles">

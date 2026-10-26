@@ -104,3 +104,20 @@ test('planning : portions prévues, apports du jour et idées selon les séances
   assert.equal(c.servings.chili, undefined, '2 repas : les 4 portions de la recette suffisent');
   assert.ok(filled['2026-11-04'].soir && !['chili', 'paella'].includes(filled['2026-11-04'].soir), 'pas de plat répété');
 });
+
+test('photos : une par recette, en 800 × 600, avec auteur, licence libre et page Commons', async () => {
+  const { PHOTOS, photoSrc, photoPage } = await import('../js/recipes.js');
+  const { readFileSync } = await import('node:fs');
+  assert.deepEqual(Object.keys(PHOTOS).sort(), RECIPES.map((r) => r.id).sort());
+  for (const r of RECIPES) {
+    const ph = PHOTOS[r.id];
+    assert.ok(ph.author && ph.file, `${r.id} : auteur et fichier`);
+    assert.match(ph.license, /^(CC0|CC BY(-SA)? [\d.]+|Public domain)$/, `${r.id} : licence libre`);
+    assert.ok(!ph.license.startsWith('CC BY') || ph.licenseUrl, `${r.id} : lien de la licence`);
+    const jpg = readFileSync(new URL(`../${photoSrc(r.id)}`, import.meta.url));
+    assert.ok(jpg.length < 150_000, `${r.id} : photo légère (${jpg.length} o)`);
+    const sof = jpg.findIndex((b, i) => b === 0xff && (jpg[i + 1] === 0xc0 || jpg[i + 1] === 0xc2));
+    assert.deepEqual([jpg.readUInt16BE(sof + 7), jpg.readUInt16BE(sof + 5)], [800, 600], `${r.id} : 800 × 600`);
+  }
+  assert.equal(photoPage({ file: 'Bowl of chili.jpg' }), 'https://commons.wikimedia.org/wiki/File:Bowl_of_chili.jpg');
+});
