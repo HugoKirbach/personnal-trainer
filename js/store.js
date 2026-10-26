@@ -25,6 +25,7 @@ export function defaults() {
     moves: {},
     checks: {},
     express: {},
+    gymDays: {},
     benchmarks: [],
     lifts: {},
     pains: [],

@@ -1,6 +1,6 @@
 import {
   BENCH_TESTS, BLOCKS, DAYS, DURATION_CHOICES, FORM_LABELS, FORM_QUESTIONS, GRADES, TYPES, SCHEDULES, ZONES, absSession, activePains, adapt, addPains, benchDue, benchSummary,
-  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, moveSession, parseYmd, planningMonday, recordBench, referenceSession, routineSession, sessionsOn, setForm, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
+  SORE_ZONES, buildSession, detenteSession, durationLabel, fmtDuration, formLevel, healPain, mondayOf, moveSession, parseYmd, planningMonday, recordBench, referenceSession, routineSession, sessionsOn, setForm, setGymDay, setSlot, setSore, setSwap, soreZones, swapChoices, tipFor,
   SCALE, blockAt, goalGrade, goalLabel, gradeTag, gymOf, levelGrade, nearestLevel, recentMax, seasonPlans, seasonStatus, statGrade, weekInfo, weekSessions, withLevels, ymd,
 } from './program.js';
 import {
@@ -25,7 +25,7 @@ import {
 import { downloadIcs, googleLink } from './calendar.js';
 import { GuidedRunner } from './guided.js';
 import { GUIDES, videoUrl } from './guides.js';
-import { fmtKg, formatSets, liftProgress, recordSet, saveLift, setsOn, suggestLift } from './lifts.js';
+import { fmtKg, formatSets, liftProgress, recordSet, saveLift, setsOn, stageOf, suggestLift } from './lifts.js';
 import { speak, stopSpeaking } from './voice.js';
 
 let state = load();
@@ -173,7 +173,7 @@ function liftLine(e, date) {
   const today = setsOn(state, l.key, date);
   if (today.some(Boolean)) return `<span class="ex-lift done">✓ Noté : ${formatSets({ sets: today })}</span>`;
   if (!l.last) return `<span class="ex-lift">📒 Première fois : note tes séries pour suivre ta progression</span>`;
-  return `<span class="ex-lift">📒 Dernière fois : ${formatSets(l.last)} → objectif <strong>${targetText(l.target)}</strong></span>`;
+  return `<span class="ex-lift">📒 Dernière fois : ${formatSets(l.last)} → objectif <strong>${targetText(l.target)}${l.target.tech ? ` · ${stageOf(l.target.tech).short}` : ''}</strong>${l.target.harder ? `<br>💪 Prêt pour plus dur : ${esc(l.target.harder)} (bouton ⇄)` : ''}</span>`;
 }
 
 function closeSheet() {
@@ -193,6 +193,8 @@ function openLiftSheet(id, i) {
       ${l.last ? `<p class="small">Dernière fois (${shortDate(l.last.date)}) : <strong>${formatSets(l.last)}</strong></p>` : ''}
       ${l.reset ? '<p class="small muted">Charge recalée sur ta dernière prise de référence.</p>' : ''}
       <p class="tip">🎯 Objectif : ${targetText(l.target)} par série${l.target.reason ? ` (${esc(l.target.reason)})` : ''}</p>
+      ${l.target.tech ? `<p class="small">🐢 ${esc(stageOf(l.target.tech).help)}</p>` : ''}
+      ${l.target.harder ? `<p class="small">💪 Prêt pour plus dur : essaie ${esc(l.target.harder)} avec le bouton ⇄ de l'exercice.</p>` : ''}
       <div class="grid3">${Array.from({ length: e.sets }, (_, k) => `<label>Série ${k + 1}
         <span class="unit-input"><input type="number" inputmode="numeric" min="0" max="300" name="reps${k}" value="${today[k]?.reps ?? l.target.reps}"><span>rép.</span></span></label>`).join('')}</div>
       ${e.load ? `<label>Charge (${e.load.tool})
@@ -249,7 +251,7 @@ function recordGuidedLift() {
   const reps = Number($('#g-reps').value);
   if (!(reps > 0)) return;
   const kg = e.load && $('#g-kg').value !== '' ? Number($('#g-kg').value) : null;
-  recordSet(state, e.lift.key, guided.session.date, st.set, { reps, kg });
+  recordSet(state, e.lift.key, guided.session.date, st.set, { reps, kg }, e.lift.target.tech);
   save(state);
 }
 
@@ -754,7 +756,7 @@ function sessionCard(s) {
   const hasRun = s.run;
   return `<section class="card session${s.reference ? ' ref-session' : ''}${s.bonus ? ' bonus-session' : ''}" style="--accent:${s.mobility ? 'var(--rest)' : TYPES[s.type].color}">
     <div class="session-head">
-      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : s.mobility ? `<span class="pill">${s.key === 'detente' ? '🌿 Détente' : '🧘 Routine'}</span>` : s.bonus ? '<span class="pill">🔥 Abdos</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference && !s.mobility ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}</span>
+      <span>${s.reference ? '<span class="pill">📏 Référence</span>' : s.mobility ? `<span class="pill">${s.key === 'detente' ? '🌿 Détente' : '🧘 Routine'}</span>` : s.bonus ? '<span class="pill">🔥 Abdos</span>' : `<span class="pill">${TYPES[s.type].label}</span>`}${s.home && !s.reference && !s.mobility ? ' <span class="pill ghost">🏠 Maison</span>' : ''}${s.express ? ' <span class="pill ghost">⚡ Express</span>' : ''}${s.gym ? ' <span class="pill ghost">🎟️ Salle ce jour-là</span>' : ''}</span>
       <span class="muted">${s.reference || s.bonus ? 'Quand tu veux' : `${slotLabel(s.slot)} · ${s.time}`}</span>
     </div>
     <h2>${esc(s.title)}</h2>
@@ -768,6 +770,7 @@ function sessionCard(s) {
     ${s.reference || s.mobility ? '' : `<p class="tip">💡 ${esc(tipFor(s.type === 'cardio' && state.settings.access.course === false ? 'cardioSansCourse' : s.type, parseYmd(s.date).getTime()))}</p>`}
     <button class="primary guided-btn" data-guided="${id}">▶ Lancer la séance guidée</button>
     ${log || s.reference || s.bonus ? '' : `<button class="express-btn" data-express="${id}">${s.express ? '↩︎ Revenir à la séance prévue' : '⚡ Pas le temps ? Version express (25 min, maison)'}</button>`}
+    ${log || !s.gymable ? '' : `<button class="express-btn" data-gymday="${id}">${s.gym ? '🏠 Revenir à la séance maison' : `🎟️ Je vais ${s.type === 'escalade' ? 'à la salle d\'escalade' : 'à la salle de sport'} ce jour-là`}</button>`}
     <ol class="exercises">
       ${s.exercises.map((e, i) => `<li class="${done.includes(i) ? 'done' : ''}">
         <label class="check"><input type="checkbox" data-check="${id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}>
@@ -1588,8 +1591,16 @@ document.addEventListener('click', async (e) => {
   if (d.express) {
     state.express ||= {};
     if (state.express[d.express]) delete state.express[d.express]; else state.express[d.express] = true;
+    if (state.gymDays?.[d.express]) setGymDay(state, d.express, false);
     delete state.checks[d.express];
     persist(); return render();
+  }
+  if (d.gymday) {
+    const on = !state.gymDays?.[d.gymday];
+    setGymDay(state, d.gymday, on);
+    delete state.checks[d.gymday];
+    persist(); render();
+    return toast(on ? 'Séance en salle pour ce jour-là. Bonne séance ! 🎟️' : 'Retour à la séance maison.', 2500);
   }
   if (d.lift) { const [id, i] = d.lift.split('|'); return openLiftSheet(id, Number(i)); }
   if (d.formEdit) { formEdit = true; return render(); }
@@ -1883,7 +1894,7 @@ document.addEventListener('submit', (e) => {
     const e = s.exercises[i];
     const kg = e.load && fd.get('kg') !== '' ? Number(fd.get('kg')) : null;
     const done = Array.from({ length: e.sets }, (_, k) => Number(fd.get(`reps${k}`))).filter((r) => r > 0).map((reps) => ({ reps, kg }));
-    saveLift(state, e.lift.key, s.date, done);
+    saveLift(state, e.lift.key, s.date, done, e.lift.target.tech);
     if (done.length) {
       const list = new Set(state.checks[f.dataset.id] || []);
       list.add(i);
@@ -1892,7 +1903,7 @@ document.addEventListener('submit', (e) => {
     closeSheet();
     persist(); render();
     if (!done.length) return toast('Séries effacées.');
-    const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done });
+    const next = suggestLift(e.lift.range, e.load && { ...e.load, kg }, { sets: done, tech: e.lift.target.tech });
     return toast(`Séries enregistrées 📒<br>Prochaine fois : ${targetText(next)}${next.reason ? ` (${esc(next.reason)})` : ''}`, 5000);
   }
   if (kind === 'cloud-email') {

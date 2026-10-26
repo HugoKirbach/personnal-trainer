@@ -4,6 +4,7 @@
 // Chaque étape porte aussi la phrase annoncée à voix haute (say).
 import { fmtDuration } from './program.js';
 import { signal, unlockAudio } from './timer.js';
+import { stageOf } from './lifts.js';
 
 export const PREP_SECONDS = 10;
 // En dessous, une étape n'est pas annoncée : les bips suffisent (intervalles de poutre…).
@@ -11,7 +12,7 @@ const SAY_MIN_SECONDS = 15;
 const target = (e) => {
   const t = e.lift?.target;
   if (!t) return e.reps ? `${e.reps}.` : '';
-  return `Objectif : ${t.reps} répétitions${t.kg != null ? ` à ${String(t.kg).replace('.', ',')} kg` : ''}.`;
+  return `Objectif : ${t.reps} répétitions${t.kg != null ? ` à ${String(t.kg).replace('.', ',')} kg` : ''}${t.tech ? `, ${stageOf(t.tech).say}` : ''}.`;
 };
 
 export function buildSteps(session) {

@@ -327,7 +327,9 @@ export function weekSessions(monday, state) {
     const id = `${ymd(date)}#${i}`;
     const slot = day >= 5 ? 'weekend' : (state.slots?.[id] ?? s.slot);
     const express = !!state.express?.[id];
-    return { ...buildSession(s.key, date, state, express, state.durations?.[id]), index: i, day, slot, time: state.settings.times[slot], date: ymd(date) };
+    const gymable = !express && resolveKey(s.key, withGym(state)) !== resolveKey(s.key, state);
+    const gym = gymable && !!state.gymDays?.[id];
+    return { ...buildSession(s.key, date, gym ? withGym(state) : state, express, state.durations?.[id]), index: i, day, slot, time: state.settings.times[slot], date: ymd(date), gym, gymable };
   });
 }
 
@@ -341,7 +343,18 @@ export function setSlot(state, id, slot) {
   return date;
 }
 
-// Déplace une séance dans sa semaine : son créneau, son mode express et son temps dispo la suivent.
+// Séance ponctuelle en salle : sans abonnement, une entrée payée le jour même donne la version salle de la séance.
+const withGym = (state) => ({ ...state, settings: { ...state.settings, access: { ...state.settings.access, escalade: true, muscu: true } } });
+
+export function setGymDay(state, id, on) {
+  state.gymDays = { ...(state.gymDays || {}) };
+  if (on) {
+    state.gymDays[id] = true;
+    if (state.express?.[id]) { state.express = { ...state.express }; delete state.express[id]; }
+  } else delete state.gymDays[id];
+}
+
+// Déplace une séance dans sa semaine : son créneau, son mode express, sa séance en salle et son temps dispo la suivent.
 export function moveSession(state, monday, index, day) {
   const from = weekSessions(parseYmd(monday), state).find((s) => s.index === index);
   state.moves = { ...(state.moves || {}), [monday]: { ...(state.moves?.[monday] || {}), [index]: day } };
@@ -349,7 +362,7 @@ export function moveSession(state, monday, index, day) {
   const to = new Date(parseYmd(monday)); to.setDate(to.getDate() + day);
   const oldId = `${from.date}#${index}`;
   const newId = `${ymd(to)}#${index}`;
-  for (const k of ['slots', 'express', 'durations']) {
+  for (const k of ['slots', 'express', 'gymDays', 'durations']) {
     const map = { ...(state[k] || {}) };
     if (oldId in map) map[newId] = map[oldId]; else delete map[newId];
     delete map[oldId];
@@ -803,6 +816,7 @@ export function buildSession(key, date, state, express = false, minutes = null) 
     if (i === items.length - 1) x.restAfter = 0;
     x.lift = track ? liftPlan(x, state, day, { resetBefore: bench.date, hold: info.phaseIndex === 3 }) : null;
     if (x.load && x.lift?.target.kg != null) x.load = { ...x.load, kg: x.lift.target.kg };
+    if (x.lift?.target.extraSet) x.sets += 1; // dernier palier de technique à la charge max
     x.detail = describe(x);
     x.timer = timerFor(x);
     x.seconds = exerciseSeconds(x);

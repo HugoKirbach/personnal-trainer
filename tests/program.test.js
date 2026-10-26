@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade, planningMonday, moveSession } from '../js/program.js';
+import { benchDue, latestBench, prescriptions, referenceSession, vmaFromCooper, durationLabel, fmtDuration, resolveKey, SCHEDULES, TEMPLATE_KEYS, adapt, buildSession, mondayOf, weekInfo, weekSessions, ymd, parseYmd, activePains, addPains, healPain, strainOf, ZONES, absSession, recordBench, formLevel, setForm, routineSession, setSlot, setSwap, swapChoices, SWAP_INFOS, DURATION_CHOICES, allocateBlocks, seasonPlans, blockAt, seasonStatus, withLevels, nearestLevel, DEFAULT_GYMS, goalGrade, statGrade, planningMonday, moveSession, setGymDay } from '../js/program.js';
 
 const baseState = () => ({
   settings: { sessionsPerWeek: 4, startDate: '2026-10-26', times: { midi: '12:15', soir: '18:00', weekend: '10:00' }, access: { escalade: true, muscu: true } },
@@ -477,6 +477,51 @@ test('une séance déplacée garde son créneau, son mode express et son temps d
   moveSession(st, '2026-10-26', 0, 0);
   assert.equal(weekSessions(parseYmd('2026-10-26'), st)[0].slot, 'soir');
   assert.deepEqual(st.slots, { '2026-10-26#0': 'soir' });
+});
+
+test('séance ponctuelle en salle : version salle pour ce jour-là, sans toucher aux accès', () => {
+  const st = baseState();
+  st.settings.access = { escalade: false, muscu: false };
+  const monday = parseYmd('2026-10-26');
+  const week = weekSessions(monday, st);
+  const bloc = week.find((s) => s.key === 'bloc');
+  assert.equal(bloc.variant, 'blocMaison');
+  assert.ok(bloc.gymable);
+  const id = `${bloc.date}#${bloc.index}`;
+  st.express = { [id]: true };
+  assert.equal(weekSessions(monday, st).find((s) => s.key === 'bloc').gymable, false);
+  setGymDay(st, id, true);
+  assert.deepEqual(st.express, {}); // la salle remplace l'express
+  const gym = weekSessions(monday, st).find((s) => s.key === 'bloc');
+  assert.equal(gym.variant, 'bloc');
+  assert.equal(gym.home, false);
+  assert.ok(gym.gym);
+  assert.deepEqual(st.settings.access, { escalade: false, muscu: false });
+  // les autres séances restent à la maison
+  assert.ok(weekSessions(monday, st).filter((s) => s.key !== 'bloc').every((s) => s.home));
+  assert.equal(weekSessions(parseYmd('2026-11-02'), st).find((s) => s.key === 'bloc').variant, 'blocMaison');
+  // déplacée, la séance reste en salle
+  moveSession(st, '2026-10-26', bloc.index, 3);
+  assert.equal(weekSessions(monday, st).find((s) => s.key === 'bloc').variant, 'bloc');
+  // avec l'abonnement, rien à proposer
+  const full = baseState();
+  assert.ok(weekSessions(monday, full).every((s) => !s.gymable));
+  setGymDay(st, `2026-10-29#${bloc.index}`, false);
+  assert.deepEqual(st.gymDays, {});
+});
+
+test('charge max : le dernier palier de technique ajoute une série', () => {
+  const st = baseState();
+  st.settings.access = { escalade: false, muscu: false };
+  const day = parseYmd('2026-11-09'); // semaine 3, pas de décharge
+  const find = (s) => s.exercises.find((e) => e.name === 'Rowing haltère un bras');
+  const base = find(buildSession('haut', day, st));
+  assert.ok(base, 'rowing dans le haut du corps maison');
+  st.lifts = { 'Rowing haltère un bras': [{ date: '2026-11-02', sets: Array.from({ length: base.sets }, () => ({ reps: 15, kg: 10 })), tech: 'demi' }] };
+  const next = find(buildSession('haut', day, st));
+  assert.equal(next.lift.target.tech, 'serie');
+  assert.equal(next.sets, base.sets + 1);
+  assert.equal(next.load.kg, 10);
 });
 
 test('le planning s\'ouvre sur la semaine suivante quand toutes les séances sont passées', () => {
